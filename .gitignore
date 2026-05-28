@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Node / Electron
+node_modules/
+out/
+dist/
+.env
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Output data (keep directory structure, ignore generated files)
+output/*.json
+output/logs/
+
+# Build output
+release/
+release.zip
+*.tsbuildinfo

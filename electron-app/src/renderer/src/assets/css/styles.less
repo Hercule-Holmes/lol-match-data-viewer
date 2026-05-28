@@ -1,0 +1,105 @@
+/* 全局基础样式 —— 参考 LeagueAkari 设计 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+::selection {
+  background: #c0c0c050;
+  text-shadow: none;
+}
+
+:root {
+  --app-min-height: 520px;
+  --app-min-width: 800px;
+  --title-bar-height: 36px;
+  --scroll-bar-height: 6px;
+  --scroll-bar-width: 8px;
+}
+
+[data-theme='dark'] {
+  --background-color-primary: #1a1a1d;
+}
+
+::-webkit-scrollbar {
+  width: var(--scroll-bar-width);
+  height: var(--scroll-bar-height);
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #4c4c4c;
+  border-radius: 0px;
+
+  &:hover {
+    background-color: #626262;
+  }
+}
+
+#app,
+html,
+body {
+  height: 100%;
+}
+
+body {
+  overflow: hidden;
+  user-select: none;
+  line-height: normal;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial,
+    sans-serif;
+}
+
+/* Naive UI 微调 */
+.n-radio {
+  align-items: center;
+}
+
+.n-notification-container .n-notification .n-notification-main .n-notification-main__header {
+  font-size: 13px;
+  font-weight: bold;
+}
+
+.n-notification-container .n-notification .n-notification-main .n-notification-main__content {
+  font-size: 13px;
+  margin: 4px 0 0 0;
+}
+
+.n-notification-container .n-notification .n-notification__avatar {
+  width: 20px;
+  height: 20px;
+  font-size: 20px;
+}
+
+.n-notification-container > .n-scrollbar > .n-scrollbar-container {
+  max-height: calc(100vh - var(--title-bar-height)) !important;
+}
+
+[data-theme='dark'] .n-base-select-menu {
+  background-color: #383838f8;
+}
+
+.n-popover-shared.popover-transition-enter-from,
+.n-popover-shared.popover-transition-leave-to {
+  opacity: 0;
+  transform: scale(0.98);
+}
+
+.n-popover-shared.popover-transition-enter-to,
+.n-popover-shared.popover-transition-leave-from {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.n-modal.fade-in-scale-up-transition-enter-from,
+.n-modal.fade-in-scale-up-transition-leave-to {
+  opacity: 0;
+  transform: scale(0.98);
+}
+
+.n-modal.fade-in-scale-up-transition-leave-from,
+.n-modal.fade-in-scale-up-transition-enter-to {
+  opacity: 1;
+  transform: scale(1);
+}

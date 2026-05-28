@@ -1,0 +1,399 @@
+{
+  "说明": "LCU API 可获取的全部数据字段清单 —— 按数据层级组织，标注了当前是否已在前端展示",
+  "总计可聚合指标": "Stats 层约 90+ 个可聚合数值字段，当前 AnalysisView 仅展示了其中 27 个",
+
+  "══════════════════════════════════════════════════": "",
+  "1. LCU 连接信息 (LcuConnectionInfo)": {
+    "_来源": "PowerShell 进程检测 → findLolClient()",
+    "port": { "类型": "number", "注释": "LCU API 端口号，如 57313" },
+    "authToken": { "类型": "string", "注释": "remoting-auth-token，用于 Basic Auth" },
+    "pid": { "类型": "number", "注释": "LeagueClientUx.exe 进程 ID" },
+    "region": { "类型": "string", "注释": "区域，如 TENCENT / GARENA" },
+    "rsoPlatformId": { "类型": "string", "注释": "RSO 平台 ID" }
+  },
+
+  "══════════════════════════════════════════════════": "",
+  "2. 召唤师信息 (SummonerInfo)": {
+    "_来源": "/lol-summoner/v1/current-summoner",
+    "puuid": { "类型": "string", "注释": "玩家全局唯一 ID" },
+    "name": { "类型": "string", "注释": "显示名称 (displayName)" },
+    "level": { "类型": "number", "注释": "召唤师等级" },
+    "region": { "类型": "string", "注释": "区域" },
+    "platform": { "类型": "string", "注释": "平台 ID" },
+    "profileIconId": { "类型": "number", "注释": "头像 ID" }
+  },
+
+  "══════════════════════════════════════════════════": "",
+  "3. 段位数据 (RankedData)": {
+    "_来源": "/lol-ranked/v1/current-ranked-stats",
+    "highest_current_tier": { "类型": "string", "注释": "当前赛季最高段位，如 GOLD" },
+    "highest_previous_tier": { "类型": "string", "注释": "上赛季最高段位" },
+    "queues": {
+      "类型": "Record<string, QueueRanked>",
+      "注释": "各队列段位详情，key 为队列类型",
+      "字段": {
+        "tier": { "类型": "string", "注释": "段位，如 GOLD / PLATINUM" },
+        "division": { "类型": "string", "注释": "段位等级，如 I / II / III / IV" },
+        "league_points": { "类型": "number", "注释": "胜点" },
+        "wins": { "类型": "number", "注释": "胜场" },
+        "losses": { "类型": "number", "注释": "负场" },
+        "win_rate": { "类型": "number", "注释": "胜率(已计算)" }
+      }
+    }
+  },
+
+  "══════════════════════════════════════════════════": "",
+  "4. 对局列表响应 (MatchHistory → Games)": {
+    "_来源": "/lol-match-history/v1/products/lol/{puuid}/matches?begIndex=0&endIndex=99",
+    "accountId": { "类型": "number", "注释": "账号 ID" },
+    "platformId": { "类型": "string", "注释": "平台 ID" },
+    "games": {
+      "gameCount": { "类型": "number", "注释": "对局总数 ⚠️ 国服通常只有 ~21 场" },
+      "gameIndexBegin": { "类型": "number", "注释": "返回的起始索引" },
+      "gameIndexEnd": { "类型": "number", "注释": "返回的结束索引" },
+      "gameBeginDate": { "类型": "string", "注释": "最早对局日期" },
+      "gameEndDate": { "类型": "string", "注释": "最晚对局日期" },
+      "games": { "类型": "Game[]", "注释": "对局数组(仅摘要，不含 stats 详情)" }
+    }
+  },
+
+  "══════════════════════════════════════════════════": "",
+  "5. 单场对局摘要 (Game)": {
+    "_来源": "match-history 列表中的单条(摘要) / game-detail 接口(完整)",
+    "gameId": { "类型": "number", "注释": "对局唯一 ID" },
+    "gameCreation": { "类型": "number", "注释": "对局创建时间戳(毫秒)" },
+    "gameCreationDate": { "类型": "string", "注释": "对局创建日期" },
+    "gameDuration": { "类型": "number", "注释": "游戏时长(秒)" },
+    "gameMode": { "类型": "string", "注释": "游戏模式，如 CLASSIC / ARAM / PRACTICETOOL" },
+    "gameType": { "类型": "string", "注释": "游戏类型，如 MATCHED_GAME" },
+    "gameVersion": { "类型": "string", "注释": "游戏版本号" },
+    "mapId": { "类型": "number", "注释": "地图 ID，11=召唤师峡谷" },
+    "queueId": { "类型": "number", "注释": "队列 ID，可映射到队列名称" },
+    "seasonId": { "类型": "number", "注释": "赛季 ID" },
+    "platformId": { "类型": "string", "注释": "平台 ID" },
+    "endOfGameResult": { "类型": "string", "注释": "游戏结束结果" }
+  },
+
+  "══════════════════════════════════════════════════": "",
+  "6. 队伍数据 (Team)": {
+    "_来源": "Game.teams[] — blue_team / red_team",
+    "_说明": "当前代码中 TeamData 已提取，但只在 GameDetail 页面的队伍面板中使用，AnalysisView 中未暴露",
+    "team_id": { "类型": "number", "注释": "队伍 ID，100=蓝方, 200=红方" },
+    "win": { "类型": "boolean", "注释": "是否获胜" },
+    "bans": { "类型": "any[]", "注释": "禁用英雄列表" },
+    "baron_kills": { "类型": "number", "注释": "纳什男爵击杀数" },
+    "dragon_kills": { "类型": "number", "注释": "巨龙击杀数" },
+    "rift_herald_kills": { "类型": "number", "注释": "峡谷先锋击杀数" },
+    "vilemaw_kills": { "类型": "number", "注释": "卑鄙之喉击杀数(3v3地图)" },
+    "horde_kills": { "类型": "number", "注释": "虫群击杀数" },
+    "tower_kills": { "类型": "number", "注释": "防御塔摧毁数" },
+    "inhibitor_kills": { "类型": "number", "注释": "水晶摧毁数" },
+    "first_blood": { "类型": "boolean", "注释": "是否拿下一血" },
+    "first_tower": { "类型": "boolean", "注释": "是否拿下一塔" },
+    "first_inhibitor": { "类型": "boolean", "注释": "是否拿下一水晶" },
+    "first_baron": { "类型": "boolean", "注释": "是否拿下第一条男爵" },
+    "first_dragon": { "类型": "boolean", "注释": "是否拿下第一条龙" }
+  },
+
+  "══════════════════════════════════════════════════": "",
+  "7. 参与者基础信息 (Participant + Player)": {
+    "_来源": "Game.participants[] + Game.participantIdentities[]",
+    "participantId": { "类型": "number", "注释": "参与者 ID(对局内唯一)" },
+    "championId": { "类型": "number", "注释": "使用的英雄 ID" },
+    "teamId": { "类型": "number", "注释": "队伍 ID，100=蓝方, 200=红方" },
+    "spell1Id": { "类型": "number", "注释": "召唤师技能1 ID" },
+    "spell2Id": { "类型": "number", "注释": "召唤师技能2 ID" },
+    "highestAchievedSeasonTier": { "类型": "string", "注释": "该玩家本赛季最高段位" },
+    "puuid": { "类型": "string", "注释": "玩家 PUUID" },
+    "accountId": { "类型": "number", "注释": "账号 ID" },
+    "summonerId": { "类型": "number", "注释": "召唤师 ID" },
+    "summonerName": { "类型": "string", "注释": "召唤师名称" },
+    "gameName": { "类型": "string", "注释": "游戏内名称(Riot ID)" },
+    "tagLine": { "类型": "string", "注释": "标签行(Riot ID 后缀)" },
+    "profileIcon": { "类型": "number", "注释": "头像图标 ID" },
+    "platformId": { "类型": "string", "注释": "平台 ID" },
+    "currentPlatformId": { "类型": "string", "注释": "当前平台 ID" },
+    "currentAccountId": { "类型": "number", "注释": "当前账号 ID" },
+    "matchHistoryUri": { "类型": "string", "注释": "历史记录 URI" }
+  },
+
+  "══════════════════════════════════════════════════": "",
+  "8. 时间线数据 (Timeline)": {
+    "_来源": "Participant.timeline — 分阶段统计(0-10min, 10-20min, 20-30min, 30min+)",
+    "_说明": "当前代码完全未提取！extractStatsFull() 没有处理 timeline 字段",
+    "participantId": { "类型": "number", "注释": "参与者 ID" },
+    "lane": { "类型": "string", "注释": "路线，如 TOP / MID / BOTTOM / JUNGLE" },
+    "role": { "类型": "string", "注释": "角色，如 SOLO / DUO / NONE" },
+    "creepsPerMinDeltas": {
+      "类型": "Record<string, number>",
+      "注释": "分均补刀(分阶段)，key 如 '0-10' / '10-20'",
+      "可为指标": "✅ 各阶段补刀效率"
+    },
+    "csDiffPerMinDeltas": {
+      "类型": "Record<string, number>",
+      "注释": "补刀差(分阶段)，与对手的补刀差值",
+      "可为指标": "✅ 对线压制力"
+    },
+    "goldPerMinDeltas": {
+      "类型": "Record<string, number>",
+      "注释": "分均金币(分阶段)",
+      "可为指标": "✅ 经济曲线"
+    },
+    "xpPerMinDeltas": {
+      "类型": "Record<string, number>",
+      "注释": "分均经验(分阶段)",
+      "可为指标": "✅ 经验获取效率"
+    },
+    "xpDiffPerMinDeltas": {
+      "类型": "Record<string, number>",
+      "注释": "经验差(分阶段)",
+      "可为指标": "✅ 等级压制"
+    },
+    "damageTakenPerMinDeltas": {
+      "类型": "Record<string, number>",
+      "注释": "分均承伤(分阶段)",
+      "可为指标": "✅ 承伤节奏"
+    },
+    "damageTakenDiffPerMinDeltas": {
+      "类型": "Record<string, number>",
+      "注释": "承伤差(分阶段)",
+      "可为指标": "✅ 被针对程度"
+    }
+  },
+
+  "══════════════════════════════════════════════════": "",
+  "9. 详细数据 (Stats) —— 最丰富的数据层，约 90+ 字段": {
+    "_来源": "Participant.stats → extractStatsFull() → PlayerStats",
+    "_说明": "✅ = 已在 AnalysisView 指标列表中 | ❌ = 未展示但可添加",
+
+    "═══ 基础战斗 (已在指标列表: kills/deaths/assists/kda) ═══": {
+      "kills": { "类型": "number", "注释": "击杀数", "状态": "✅" },
+      "deaths": { "类型": "number", "注释": "死亡数", "状态": "✅" },
+      "assists": { "类型": "number", "注释": "助攻数", "状态": "✅" },
+      "kda": { "类型": "number", "注释": "KDA 值 = (击杀+助攻)/死亡", "状态": "✅" },
+      "kda_ratio": { "类型": "string", "注释": "KDA 字符串，如 '5/3/12'", "状态": "❌ 未展示" },
+      "champ_level": { "类型": "number", "注释": "英雄等级(结束时的等级)", "状态": "❌ 可添加" },
+      "win": { "类型": "boolean", "注释": "是否获胜", "状态": "✅(间接)" },
+      "killing_sprees": { "类型": "number", "注释": "连杀次数(双杀及以上)", "状态": "✅" },
+      "largest_killing_spree": { "类型": "number", "注释": "最大连杀数", "状态": "✅" },
+      "largest_multi_kill": { "类型": "number", "注释": "最大多杀数", "状态": "✅" },
+      "largest_critical_strike": { "类型": "number", "注释": "最大暴击伤害", "状态": "✅" },
+      "longest_time_spent_living": { "类型": "number", "注释": "最长存活时间(秒)", "状态": "✅" },
+      "was_severe_transgressor": { "类型": "boolean", "注释": "是否严重违规(挂机/送头)", "状态": "❌ 可添加" }
+    },
+
+    "═══ 多杀统计 ═══": {
+      "double_kills": { "类型": "number", "注释": "双杀次数", "状态": "✅" },
+      "triple_kills": { "类型": "number", "注释": "三杀次数", "状态": "✅" },
+      "quadra_kills": { "类型": "number", "注释": "四杀次数", "状态": "✅" },
+      "penta_kills": { "类型": "number", "注释": "五杀次数", "状态": "✅" },
+      "unreal_kills": { "类型": "number", "注释": "六杀次数(仅限特殊模式)", "状态": "❌ 可添加" }
+    },
+
+    "═══ 伤害统计(全部) ═══": {
+      "_说明": "当前只展示了 total_to_champs 和 total_taken，还有 11 个伤害分解维度",
+      "damage_total_to_champs": { "类型": "number", "注释": "对英雄总伤害", "状态": "✅", "路径": "damage.total_to_champs" },
+      "damage_total_dealt": { "类型": "number", "注释": "总伤害输出(含小兵/野怪/塔)", "状态": "❌", "路径": "damage.total_dealt" },
+      "damage_total_taken": { "类型": "number", "注释": "总承受伤害", "状态": "✅", "路径": "damage.total_taken" },
+      "damage_physical_to_champs": { "类型": "number", "注释": "对英雄物理伤害", "状态": "❌", "路径": "damage.physical_to_champs" },
+      "damage_physical_dealt": { "类型": "number", "注释": "物理伤害输出(全部)", "状态": "❌", "路径": "damage.physical_dealt" },
+      "damage_physical_taken": { "类型": "number", "注释": "承受物理伤害", "状态": "❌", "路径": "damage.physical_taken" },
+      "damage_magic_to_champs": { "类型": "number", "注释": "对英雄魔法伤害", "状态": "❌", "路径": "damage.magic_to_champs" },
+      "damage_magic_dealt": { "类型": "number", "注释": "魔法伤害输出(全部)", "状态": "❌", "路径": "damage.magic_dealt" },
+      "damage_magic_taken": { "类型": "number", "注释": "承受魔法伤害", "状态": "❌", "路径": "damage.magic_taken" },
+      "damage_true_to_champs": { "类型": "number", "注释": "对英雄真实伤害", "状态": "❌", "路径": "damage.true_to_champs" },
+      "damage_true_dealt": { "类型": "number", "注释": "真实伤害输出(全部)", "状态": "❌", "路径": "damage.true_dealt" },
+      "damage_true_taken": { "类型": "number", "注释": "承受真实伤害", "状态": "❌", "路径": "damage.true_taken" },
+      "damage_largest_critical_strike": { "类型": "number", "注释": "最大暴击伤害", "状态": "✅", "路径": "damage.largest_critical_strike" }
+    },
+
+    "═══ 经济 ═══": {
+      "economy_gold_earned": { "类型": "number", "注释": "获得金币", "状态": "✅", "路径": "economy.gold_earned" },
+      "economy_gold_spent": { "类型": "number", "注释": "花费金币", "状态": "✅", "路径": "economy.gold_spent" }
+    },
+
+    "═══ 补刀/刷野 ═══": {
+      "cs_total": { "类型": "number", "注释": "总补刀(小兵+野怪)", "状态": "✅", "路径": "cs.total" },
+      "cs_minions": { "类型": "number", "注释": "线上小兵补刀", "状态": "❌ 可添加", "路径": "cs.minions" },
+      "cs_neutral_total": { "类型": "number", "注释": "野怪击杀总数", "状态": "✅", "路径": "cs.neutral_total" },
+      "cs_neutral_enemy_jungle": { "类型": "number", "注释": "敌方野区野怪击杀", "状态": "❌ 可添加", "路径": "cs.neutral_enemy_jungle" },
+      "cs_neutral_team_jungle": { "类型": "number", "注释": "己方野区野怪击杀", "状态": "❌ 可添加", "路径": "cs.neutral_team_jungle" }
+    },
+
+    "═══ 治疗/护盾/减伤 ═══": {
+      "survival_total_heal": { "类型": "number", "注释": "总治疗量", "状态": "✅", "路径": "survival.total_heal" },
+      "survival_total_units_healed": { "类型": "number", "注释": "治疗单位数(含小兵)", "状态": "❌ 可添加", "路径": "survival.total_units_healed" },
+      "survival_damage_self_mitigated": { "类型": "number", "注释": "自我减伤(护盾+抗性)", "状态": "✅", "路径": "survival.damage_self_mitigated" },
+      "survival_longest_time_living": { "类型": "number", "注释": "最长存活时间(秒)", "状态": "✅", "路径": "survival.longest_time_living" }
+    },
+
+    "═══ 视野 ═══": {
+      "vision_score": { "类型": "number", "注释": "视野得分", "状态": "✅", "路径": "vision.score" },
+      "vision_wards_placed": { "类型": "number", "注释": "放置守卫数", "状态": "✅", "路径": "vision.wards_placed" },
+      "vision_wards_killed": { "类型": "number", "注释": "摧毁守卫数(排眼)", "状态": "✅", "路径": "vision.wards_killed" },
+      "vision_sight_wards_bought": { "类型": "number", "注释": "购买假眼数", "状态": "❌ 可添加", "路径": "vision.sight_wards_bought" },
+      "vision_vision_wards_bought": { "类型": "number", "注释": "购买真眼数", "状态": "❌ 可添加", "路径": "vision.vision_wards_bought" }
+    },
+
+    "═══ 控制 ═══": {
+      "cc_time_cc_others": { "类型": "number", "注释": "控制敌人时间(秒)", "状态": "✅", "路径": "cc.time_cc_others" },
+      "cc_total_cc_dealt": { "类型": "number", "注释": "被控制时间(秒)", "状态": "✅", "路径": "cc.total_cc_dealt" }
+    },
+
+    "═══ 目标/推塔 ═══": {
+      "objectives_turret_kills": { "类型": "number", "注释": "推塔数", "状态": "✅", "路径": "objectives.turret_kills" },
+      "objectives_inhibitor_kills": { "类型": "number", "注释": "破水晶数", "状态": "✅", "路径": "objectives.inhibitor_kills" },
+      "objectives_damage_to_turrets": { "类型": "number", "注释": "对塔伤害", "状态": "✅", "路径": "objectives.damage_to_turrets" },
+      "objectives_damage_to_objectives": { "类型": "number", "注释": "对目标总伤害(塔+水晶+龙+男爵)", "状态": "❌ 可添加", "路径": "objectives.damage_to_objectives" }
+    },
+
+    "═══ 首杀/首塔/首水晶 ═══": {
+      "firsts_first_blood_kill": { "类型": "boolean", "注释": "是否拿到一血", "状态": "✅", "路径": "firsts.first_blood_kill" },
+      "firsts_first_blood_assist": { "类型": "boolean", "注释": "是否参与一血助攻", "状态": "❌ 可添加", "路径": "firsts.first_blood_assist" },
+      "firsts_first_tower_kill": { "类型": "boolean", "注释": "是否拿下一塔", "状态": "✅", "路径": "firsts.first_tower_kill" },
+      "firsts_first_tower_assist": { "类型": "boolean", "注释": "是否参与一塔助攻", "状态": "❌ 可添加", "路径": "firsts.first_tower_assist" },
+      "firsts_first_inhibitor_kill": { "类型": "boolean", "注释": "是否拿下一水晶", "状态": "❌ 可添加", "路径": "firsts.first_inhibitor_kill" },
+      "firsts_first_inhibitor_assist": { "类型": "boolean", "注释": "是否参与一水晶助攻", "状态": "❌ 可添加", "路径": "firsts.first_inhibitor_assist" }
+    },
+
+    "═══ 装备 (当前只用于图标展示，未做数据分析) ═══": {
+      "items[0..6]": { "类型": "number[]", "注释": "7个装备槽的物品ID", "状态": "❌ 可做装备频次分析" },
+      "role_bound_item": { "类型": "number", "注释": "辅助装/打野装等角色绑定装备ID", "状态": "❌ 可添加" }
+    },
+
+    "═══ 符文 (当前只用于图标展示，未做数据分析) ═══": {
+      "runes_primary_style": { "类型": "number", "注释": "主系符文系ID(如 8000=精密)", "状态": "❌ 可做符文偏好分析" },
+      "runes_sub_style": { "类型": "number", "注释": "副系符文系ID", "状态": "❌ 可做符文偏好分析" },
+      "runes_perks[0..5]": { "类型": "number[]", "注释": "6个符文ID", "状态": "❌ 可做符文频次分析" },
+      "runes_perk_vars": { "类型": "Record<string, number[]>", "注释": "符文变量(适应之力等)", "状态": "❌" }
+    },
+
+    "═══ 召唤师技能 ═══": {
+      "summoner_spells_spell1": { "类型": "number|null", "注释": "召唤师技能1 ID", "状态": "❌ 可做技能偏好分析" },
+      "summoner_spells_spell2": { "类型": "number|null", "注释": "召唤师技能2 ID", "状态": "❌" }
+    },
+
+    "═══ 位置 ═══": {
+      "position_individual_position": { "类型": "string", "注释": "个人位置，如 TOP/MID/BOTTOM/JUNGLE/SUPPORT", "状态": "❌ 可添加", "路径": "position.individual_position" },
+      "position_team_position": { "类型": "string", "注释": "队伍位置", "状态": "❌", "路径": "position.team_position" },
+      "position_lane": { "类型": "string", "注释": "路线，如 TOP/MID/BOTTOM", "状态": "❌", "路径": "position.lane" }
+    },
+
+    "═══ 评分(游戏内置评分系统) ═══": {
+      "scores_combat": { "类型": "number", "注释": "战斗评分", "状态": "✅", "路径": "scores.combat" },
+      "scores_objective": { "类型": "number", "注释": "目标评分", "状态": "❌ 可添加", "路径": "scores.objective" },
+      "scores_total": { "类型": "number", "注释": "总评分", "状态": "❌ 可添加", "路径": "scores.total" },
+      "scores_rank": { "类型": "number", "注释": "评分排名(队内)", "状态": "❌ 可添加", "路径": "scores.rank" },
+      "scores_details[0..9]": { "类型": "number[]", "注释": "10项详细评分子分数", "状态": "❌ 可添加", "路径": "scores.details" }
+    },
+
+    "═══ 投降 ═══": {
+      "surrender_game_ended_in_surrender": { "类型": "boolean", "注释": "是否以投降结束", "状态": "❌ 可添加" },
+      "surrender_game_ended_in_early_surrender": { "类型": "boolean", "注释": "是否提前投降(重开)", "状态": "❌" },
+      "surrender_team_early_surrendered": { "类型": "boolean", "注释": "己方是否提前投降", "状态": "❌" }
+    },
+
+    "═══ 斗魂竞技场 / 海克斯大乱斗 ═══": {
+      "_说明": "queueId=98/1200 (海克斯大乱斗) 或 gameMode=CHERRY (斗魂竞技场) 时有效",
+      "arena_subteam_placement": { "类型": "number", "注释": "子队伍排名(斗魂模式)", "状态": "❌" },
+      "arena_player_subteam_id": { "类型": "number", "注释": "玩家子队伍ID", "状态": "❌" },
+      "arena_player_augments[0..5]": {
+        "类型": "number[]",
+        "注释": "6个海克斯增幅ID ← 已提取！对应 LcuAugment.id",
+        "状态": "✅ 已在 AnalysisView 展示",
+        "展示方式": "全局热门增幅TOP10 + 各玩家最爱增幅",
+        "名称来源": "LCU CDN cherry-augments.json → AugmentData.nameTRA",
+        "稀有度": "kPrismatic(棱彩) / kGold(金) / kSilver(银) / kBronze(铜)"
+      }
+    }
+  },
+
+  "══════════════════════════════════════════════════": "",
+  "10. 英雄熟练度 (ChampionMastery)": {
+    "_来源": "/lol-collections/v1/inventories/{summonerId}/champion-mastery",
+    "_说明": "当前代码已提取但在 GameRecord 中，AnalysisView 完全未使用",
+    "level": { "类型": "number", "注释": "熟练度等级 (1-7)" },
+    "points": { "类型": "number", "注释": "熟练度点数" },
+    "highest_grade": { "类型": "string", "注释": "最高评分，如 S+ / S / A+", "可为指标": "✅ S评分次数" },
+    "last_play_time": { "类型": "number", "注释": "最后使用时间戳" }
+  },
+
+  "══════════════════════════════════════════════════": "",
+  "11. 游戏静态数据缓存 (GameDataCache)": {
+    "_来源": "LCU CDN /lol-game-data/assets/v1/*",
+    "_说明": "当前已加载全部7类数据到 Pinia Store，用于名称/图标映射",
+    "champions": { "类型": "Record<number, ChampionSimple>", "注释": "英雄字典(192个)，含 name/alias/roles/squarePortraitPath" },
+    "items": { "类型": "Record<number, ItemData>", "注释": "装备字典(705个)，含 name/description/price/categories/iconPath" },
+    "summonerSpells": { "类型": "Record<number, SummonerSpellData>", "注释": "召唤师技能字典(21个)，含 name/description/cooldown/iconPath" },
+    "perks": { "类型": "Record<number, PerkData>", "注释": "符文字典(103个)，含 name/shortDesc/longDesc/iconPath" },
+    "perkstyles": { "类型": "PerkstylesData", "注释": "符文系(5个主系)，含 slots/defaults/allowedSubStyles" },
+    "queues": { "类型": "Record<number, QueueData>", "注释": "队列字典(400个)，含 name/shortName/description/gameSelectCategory" },
+    "augments": { "类型": "Record<number, AugmentData>", "注释": "增幅字典，含 nameTRA(中文名) / augmentSmallIconPath(图标) / rarity(稀有度)", "来源": "LCU CDN /lol-game-data/assets/v1/cherry-augments.json", "状态": "✅ 已加载" }
+  },
+
+  "══════════════════════════════════════════════════": "",
+  "12. 当前 AnalysisView 指标状态": {
+    "_当前已展示": "34 个指标（32 个数值指标 + 装备分析 + 增幅分析）",
+    "_最近新增(5个)": "killingSprees / largestCrit / goldSpent / dmgToTurrets / combatScore",
+    "_最近新增(装备)": "全局装备频次 TOP10 + 各玩家最爱装备（排除魄罗佳肴和视野饰品）",
+    "_最近新增(增幅)": "全局增幅频次 TOP10 + 各玩家最爱增幅（仅斗魂/海克斯大乱斗有效）",
+    "_CDN数据": "7类 → champions / items / spells / perks / perkstyles / queues / augments",
+
+    "直接数值型(适合排名)": [
+      { "路径": "kda_ratio", "注释": "KDA 字符串 '5/3/12'", "展示方式": "字符串" },
+      { "路径": "champ_level", "注释": "结束英雄等级", "展示方式": "均值/分布" },
+      { "路径": "killing_sprees", "注释": "连杀次数", "展示方式": "总计", "状态": "✅" },
+      { "路径": "unreal_kills", "注释": "六杀次数", "展示方式": "总计" },
+      { "路径": "damage.total_dealt", "注释": "总伤害输出(含小兵)", "展示方式": "总计/场均" },
+      { "路径": "damage.physical_to_champs", "注释": "对英雄物理伤害", "展示方式": "总计/场均" },
+      { "路径": "damage.physical_dealt", "注释": "物理伤害(全部)", "展示方式": "总计/场均" },
+      { "路径": "damage.physical_taken", "注释": "承受物理伤害", "展示方式": "总计/场均" },
+      { "路径": "damage.magic_to_champs", "注释": "对英雄魔法伤害", "展示方式": "总计/场均" },
+      { "路径": "damage.magic_dealt", "注释": "魔法伤害(全部)", "展示方式": "总计/场均" },
+      { "路径": "damage.magic_taken", "注释": "承受魔法伤害", "展示方式": "总计/场均" },
+      { "路径": "damage.true_to_champs", "注释": "对英雄真实伤害", "展示方式": "总计/场均" },
+      { "路径": "damage.true_dealt", "注释": "真实伤害(全部)", "展示方式": "总计/场均" },
+      { "路径": "damage.true_taken", "注释": "承受真实伤害", "展示方式": "总计/场均" },
+      { "路径": "damage.largest_critical_strike", "注释": "最大暴击", "展示方式": "最大值/均值", "状态": "✅" },
+      { "路径": "economy.gold_spent", "注释": "花费金币", "展示方式": "总计/场均", "状态": "✅" },
+      { "路径": "cs.minions", "注释": "线上小兵补刀", "展示方式": "总计/场均" },
+      { "路径": "cs.neutral_enemy_jungle", "注释": "敌方野怪击杀", "展示方式": "总计/场均" },
+      { "路径": "cs.neutral_team_jungle", "注释": "己方野怪击杀", "展示方式": "总计/场均" },
+      { "路径": "survival.total_units_healed", "注释": "治疗单位数", "展示方式": "总计/场均" },
+      { "路径": "vision.sight_wards_bought", "注释": "购买假眼数", "展示方式": "总计/场均" },
+      { "路径": "vision.vision_wards_bought", "注释": "购买真眼数", "展示方式": "总计/场均" },
+      { "路径": "objectives.damage_to_turrets", "注释": "对塔伤害", "展示方式": "总计/场均", "状态": "✅" },
+      { "路径": "objectives.damage_to_objectives", "注释": "对目标总伤害", "展示方式": "总计/场均" },
+      { "路径": "scores.combat", "注释": "战斗评分", "展示方式": "均值", "状态": "✅" },
+      { "路径": "scores.objective", "注释": "目标评分", "展示方式": "均值" },
+      { "路径": "scores.total", "注释": "总评分", "展示方式": "均值" },
+      { "路径": "scores.rank", "注释": "队内评分排名", "展示方式": "均值(越低越好)" },
+      { "路径": "champion_mastery.level", "注释": "熟练度等级", "展示方式": "均值/最高" },
+      { "路径": "champion_mastery.highest_grade", "注释": "最高评分 S+ > S > A+", "展示方式": "S次数" }
+    ],
+
+    "布尔型(适合做频次/比率)": [
+      { "路径": "win", "注释": "胜率(已展示)", "状态": "✅" },
+      { "路径": "firsts.first_blood_assist", "注释": "一血助攻率", "展示方式": "次数/比率" },
+      { "路径": "firsts.first_tower_assist", "注释": "一塔助攻率", "展示方式": "次数/比率" },
+      { "路径": "firsts.first_inhibitor_kill", "注释": "一水晶率", "展示方式": "次数/比率" },
+      { "路径": "firsts.first_inhibitor_assist", "注释": "一水晶助攻率", "展示方式": "次数/比率" },
+      { "路径": "was_severe_transgressor", "注释": "违规率(挂机/送头)", "展示方式": "次数(越少越好)" }
+    ],
+
+    "分类型(适合做偏好分析)": [
+      { "路径": "position.individual_position", "注释": "位置偏好 TOP/MID/JG/SUP/BOT", "展示方式": "频次分布" },
+      { "路径": "items[0..6]", "注释": "装备选择偏好", "展示方式": "频次 TOP N" },
+      { "路径": "runes.primary_style", "注释": "主系符文偏好", "展示方式": "频次分布" },
+      { "路径": "runes.perks", "注释": "符文选择频次", "展示方式": "频次 TOP N" },
+      { "路径": "summoner_spells", "注释": "召唤师技能偏好", "展示方式": "频次分布" }
+    ],
+
+    "时间线型(需要提取 timeline 数据)": [
+      { "路径": "timeline.creepsPerMinDeltas", "注释": "各阶段补刀效率", "展示方式": "分阶段折线" },
+      { "路径": "timeline.csDiffPerMinDeltas", "注释": "补刀压制力", "展示方式": "分阶段折线" },
+      { "路径": "timeline.goldPerMinDeltas", "注释": "经济曲线", "展示方式": "分阶段折线" },
+      { "路径": "timeline.xpPerMinDeltas", "注释": "经验曲线", "展示方式": "分阶段折线" }
+    ]
+  }
+}
