@@ -30,6 +30,11 @@ const router = createRouter({
           path: 'analysis',
           name: 'analysis',
           component: () => import('@/views/AnalysisView.vue')
+        },
+        {
+          path: 'friends',
+          name: 'friend-analysis',
+          component: () => import('@/views/FriendAnalysis.vue')
         }
       ]
     }

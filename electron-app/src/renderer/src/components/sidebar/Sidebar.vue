@@ -12,7 +12,7 @@
 </template>
 
 <script setup lang="ts">
-import { AnalyticsOutline, StatsChartOutline } from '@vicons/ionicons5'
+import { AnalyticsOutline, PeopleOutline, StatsChartOutline } from '@vicons/ionicons5'
 import { NIcon } from 'naive-ui'
 import { h, ref, watchEffect } from 'vue'
 import { useRoute, useRouter, isNavigationFailure, NavigationFailureType } from 'vue-router'
@@ -46,6 +46,11 @@ const menuItems = [
     key: 'analysis',
     icon: renderIcon(StatsChartOutline),
     name: '数据分析'
+  },
+  {
+    key: 'friend-analysis',
+    icon: renderIcon(PeopleOutline),
+    name: '好友分析'
   }
 ]
 
