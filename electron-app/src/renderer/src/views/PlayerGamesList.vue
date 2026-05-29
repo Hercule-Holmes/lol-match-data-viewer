@@ -47,7 +47,7 @@
           <span class="summoner-name">{{ displayName }}</span>
         </div>
         <div class="summoner-actions">
-          <span class="meta-text">共 {{ listData.totalGames }} 场对局</span>
+          <span class="meta-text">共 {{ filteredTotalCount }} 场对局</span>
           <n-button
             v-if="checkedRowKeys.length > 0"
             type="primary"
@@ -65,6 +65,15 @@
 
       <div class="main-content">
         <div class="left-panel">
+          <div class="mode-filter-section">
+            <n-select
+              size="small"
+              :value="modeFilter"
+              @update:value="onModeFilterChange"
+              :options="modeOptions"
+              :consistent-menu-width="false"
+            />
+          </div>
           <div class="section">
             <div class="section-title">分页（共 {{ totalPages }} 页）</div>
             <div class="pagination-row">
@@ -102,7 +111,7 @@
 
           <MatchStatsPanel
             :current-page="currentPage"
-            :total-games="listData.totalGames"
+            :total-games="filteredTotalCount"
             :page-size="pageSize"
             :games="currentPageGames"
             :self-puuid="listData.summoner.puuid"
@@ -140,7 +149,9 @@ import {
   CloudDownloadOutline, RefreshOutline, AnalyticsOutline, PersonOutline,
 } from '@vicons/ionicons5'
 import type { MatchListData } from '@shared/types'
+import { getGameModeName, getQueueName } from '@shared/utils/mappings'
 import { useTabStore } from '@/stores/tab'
+import { useGameDataStore } from '@/stores/game-data'
 import MatchHistoryCard from '@/components/match-history/MatchHistoryCard.vue'
 import MatchStatsPanel from '@/components/match-history/MatchStatsPanel.vue'
 import LcuImage from '@/components/widgets/LcuImage.vue'
@@ -155,6 +166,7 @@ const props = defineProps<{
 const router = useRouter()
 const message = useMessage()
 const tabStore = useTabStore()
+const gds = useGameDataStore()
 
 const listData = ref<MatchListData | null>(null)
 const loading = ref(false)
@@ -165,19 +177,61 @@ const inputtingPage = ref(1)
 
 const pageSizeOptions = [10, 20, 30, 50].map(n => ({ label: `${n} 条/页`, value: n }))
 
+/** 模式筛选 */
+const modeFilter = ref('__all__')
+
+/** 将 game 映射为统一的模式显示名（与 MatchHistoryCard 的 formattedModeText 保持一致） */
+function gameModeLabel(g: { gameMode: string; queueId: number }): string {
+  if (g.gameMode === 'PRACTICETOOL') return '训练模式'
+  const modeName = getGameModeName(g.gameMode)
+  if (modeName !== g.gameMode) return modeName
+  return getQueueName(g.queueId, gds.queues)
+}
+
+/** 从已加载对局中提取不同模式列表，按出现频次降序 */
+const modeOptions = computed(() => {
+  if (!listData.value) return [{ label: '全部', value: '__all__' }]
+  const countMap = new Map<string, number>()
+  for (const g of listData.value.games) {
+    const label = gameModeLabel(g)
+    countMap.set(label, (countMap.get(label) || 0) + 1)
+  }
+  const options = Array.from(countMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([label, count]) => ({ label: `${label} (${count})`, value: label }))
+  return [{ label: '全部', value: '__all__' }, ...options]
+})
+
+/** 按模式筛选后的对局 */
+const filteredGames = computed(() => {
+  if (!listData.value) return []
+  if (modeFilter.value === '__all__') return listData.value.games
+  return listData.value.games.filter(g => gameModeLabel(g) === modeFilter.value)
+})
+
+/** 筛选后的总数 */
+const filteredTotalCount = computed(() => {
+  if (modeFilter.value === '__all__') return listData.value?.totalGames ?? 0
+  return filteredGames.value.length
+})
+
 watch(currentPage, (p) => { inputtingPage.value = p })
 
 const displayName = computed(() => props.name || '---')
 
 const totalPages = computed(() => {
   if (!listData.value) return 1
-  return Math.max(1, Math.ceil(listData.value.totalGames / pageSize.value))
+  const total = modeFilter.value === '__all__'
+    ? listData.value.totalGames
+    : filteredGames.value.length
+  return Math.max(1, Math.ceil(total / pageSize.value))
 })
 
 const currentPageGames = computed(() => {
   if (!listData.value) return []
+  const src = filteredGames.value
   const start = (currentPage.value - 1) * pageSize.value
-  return listData.value.games.slice(start, start + pageSize.value)
+  return src.slice(start, start + pageSize.value)
 })
 
 const hasNextPage = computed(() => currentPage.value < totalPages.value)
@@ -216,6 +270,12 @@ async function refreshData() {
   } finally {
     loading.value = false
   }
+}
+
+function onModeFilterChange(v: string) {
+  modeFilter.value = v
+  currentPage.value = 1
+  checkedRowKeys.value = []
 }
 
 function handlePageSizeChange(v: number) {
@@ -342,6 +402,10 @@ onMounted(async () => {
   max-width: 320px;
   overflow-y: auto;
   padding: 0 12px 12px 20px;
+}
+
+.mode-filter-section {
+  margin-bottom: 8px;
 }
 
 .right-panel {
