@@ -24,6 +24,37 @@ export interface SummonerInfo {
   profileIconId: number
 }
 
+/** LCU /lol-summoner/v1/summoners/{id} 原始响应 */
+export interface LcuSummoner {
+  accountId: number
+  displayName: string
+  gameName: string
+  tagLine: string
+  internalName: string
+  nameChangeFlag: boolean
+  percentCompleteForNextLevel: number
+  profileIconId: number
+  puuid: string
+  rerollPoints: {
+    currentPoints: number
+    numberOfRolls: number
+    pointsCostToRoll: number
+    pointsToReroll: number
+  }
+  summonerId: number
+  summonerLevel: number
+  xpSinceLastLevel: number
+  xpUntilNextLevel: number
+}
+
+/** 从 LCU 召唤师数据提取显示名（优先 Riot ID，回退 displayName） */
+export function summonerDisplayName(s: { displayName?: string; gameName?: string; tagLine?: string }): string {
+  if (s.gameName) {
+    return s.tagLine ? `${s.gameName}#${s.tagLine}` : s.gameName
+  }
+  return s.displayName || ''
+}
+
 export interface QueueRanked {
   tier: string
   division: string

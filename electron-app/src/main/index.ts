@@ -4,7 +4,7 @@
  * - 注册 IPC 处理器（日志 + LCU 数据拉取）
  * - 注册 lcu-asset:// 自定义协议代理 LCU 图片资源
  */
-import { app, BrowserWindow, ipcMain, shell, protocol } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, shell, protocol } from 'electron'
 import { join } from 'path'
 import axios, { AxiosInstance } from 'axios'
 import http from 'http'
@@ -211,6 +211,7 @@ registerLcuHandlers({
 
 app.whenReady().then(() => {
   console.log('[LCU:MAIN] Electron 应用启动完成')
+  Menu.setApplicationMenu(null)
   registerLcuAssetProtocol()
   createWindow()
 

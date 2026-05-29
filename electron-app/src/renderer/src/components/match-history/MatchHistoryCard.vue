@@ -100,8 +100,9 @@
           />
           <span
             class="name"
-            :class="{ self: p.puuid === selfPuuid }"
+            :class="{ self: p.puuid === selfPuuid, clickable: p.puuid !== selfPuuid && !!p.puuid }"
             :title="displayName(p)"
+            @click.stop="p.puuid && p.puuid !== selfPuuid && openPlayerTab(p)"
           >{{ displayName(p) }}</span>
         </div>
       </div>
@@ -118,8 +119,9 @@
           />
           <span
             class="name"
-            :class="{ self: p.puuid === selfPuuid }"
+            :class="{ self: p.puuid === selfPuuid, clickable: p.puuid !== selfPuuid && !!p.puuid }"
             :title="displayName(p)"
+            @click.stop="p.puuid && p.puuid !== selfPuuid && openPlayerTab(p)"
           >{{ displayName(p) }}</span>
         </div>
       </div>
@@ -141,6 +143,7 @@ import relativeTime from 'dayjs/plugin/relativeTime'
 import 'dayjs/locale/zh-cn'
 import type { GameSummary, ParticipantBrief } from '@shared/types'
 import { useGameDataStore } from '@/stores/game-data'
+import { useTabStore } from '@/stores/tab'
 import { formatGameDuration } from '@/utils/format'
 import { getGameModeName, getQueueName, getPlayerDisplayName } from '@shared/utils/mappings'
 import LcuImage from '@/components/widgets/LcuImage.vue'
@@ -152,6 +155,8 @@ import PerkstyleDisplay from '@/components/widgets/PerkstyleDisplay.vue'
 
 dayjs.extend(relativeTime)
 dayjs.locale('zh-cn')
+
+const tabStore = useTabStore()
 
 const { game, selfPuuid, selected } = defineProps<{
   game: GameSummary
@@ -217,6 +222,13 @@ const isPerfectKda = computed(() => {
 
 function displayName(p: ParticipantBrief): string {
   return getPlayerDisplayName(p)
+}
+
+function openPlayerTab(p: ParticipantBrief) {
+  if (!p.puuid) return
+  const name = p.gameName ? (p.tagLine ? `${p.gameName}#${p.tagLine}` : p.gameName) : p.summonerName
+  if (!name) return
+  tabStore.openTab(p.puuid, name, p.profileIconId, 0)
 }
 </script>
 
@@ -468,10 +480,13 @@ function displayName(p: ParticipantBrief): string {
       white-space: nowrap;
       font-size: 12px;
       color: var(--card-text-player);
-      cursor: pointer;
+      cursor: default;
       transition: all 0.3s ease;
 
-      &:hover { color: #63e2b7; }
+      &.clickable {
+        cursor: pointer;
+        &:hover { color: #63e2b7; }
+      }
 
       &.self {
         cursor: default;

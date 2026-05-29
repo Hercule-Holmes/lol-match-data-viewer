@@ -10,7 +10,7 @@
           round
         />
         <div class="pc-name-block">
-          <div class="pc-name" :title="player.summoner_name">
+          <div class="pc-name" :title="player.summoner_name" @click.stop="openPlayerTab()">
             {{ shortName(player.summoner_name) }}
           </div>
           <div class="pc-champion-name">
@@ -99,11 +99,13 @@
 import { computed } from 'vue'
 import type { PlayerData } from '@shared/types'
 import { useGameDataStore } from '@/stores/game-data'
+import { useTabStore } from '@/stores/tab'
 import ChampionIcon from '@/components/widgets/ChampionIcon.vue'
 import ItemDisplay from '@/components/widgets/ItemDisplay.vue'
 import SummonerSpellDisplay from '@/components/widgets/SummonerSpellDisplay.vue'
 
 const gds = useGameDataStore()
+const tabStore = useTabStore()
 
 const props = defineProps<{
   player: PlayerData
@@ -114,6 +116,12 @@ const props = defineProps<{
 function shortName(name: string): string {
   if (!name) return '?'
   return name.length > 12 ? name.slice(0, 11) + '…' : name
+}
+
+function openPlayerTab() {
+  const p = props.player
+  if (!p.puuid) return
+  tabStore.openTab(p.puuid, p.summoner_name, p.profile_icon_id, 0)
 }
 
 function fmtNum(n: number | undefined | null): string {
@@ -173,6 +181,10 @@ function isBest(key: string): boolean {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
+  transition: color 0.15s;
+
+  &:hover { color: #63e2b7; }
 }
 
 .pc-champion-name {

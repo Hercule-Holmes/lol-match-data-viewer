@@ -3,7 +3,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron'
-import type { LcuConnectionInfo, MatchData, MatchListData, GameRecord, GameDataCache } from '@shared/types'
+import type { LcuConnectionInfo, MatchData, MatchListData, GameRecord, GameDataCache, LcuSummoner } from '@shared/types'
 
 const api = {
   /** 向主进程发送日志（渲染进程专用），主进程会写入日志文件 */
@@ -17,10 +17,28 @@ const api = {
     return ipcRenderer.invoke('lcu:check-connection')
   },
 
+  /** 获取当前登录召唤师的简要信息 */
+  getCurrentSummoner(): Promise<LcuSummoner> {
+    console.log('[LCU:PRELOAD] getCurrentSummoner 调用')
+    return ipcRenderer.invoke('lcu:current-summoner')
+  },
+
   /** 拉取对局列表（轻量，仅摘要，支持分页） */
   fetchMatchList(page = 1, pageSize = 20): Promise<MatchListData> {
     console.log(`[LCU:PRELOAD] fetchMatchList 调用: page=${page}, pageSize=${pageSize}`)
     return ipcRenderer.invoke('lcu:fetch-match-list', page, pageSize)
+  },
+
+  /** 通过召唤师 ID/名字/PUUID 查询任意玩家 */
+  lookupSummoner(query: { summonerId?: number; name?: string; puuid?: string }): Promise<LcuSummoner> {
+    console.log(`[LCU:PRELOAD] lookupSummoner 调用: ${query.summonerId ? `id=${query.summonerId}` : query.name ? `name=${query.name}` : `puuid=${query.puuid?.slice(0, 8)}…`}`)
+    return ipcRenderer.invoke('lcu:lookup-summoner', query)
+  },
+
+  /** 以指定 PUUID 拉取对局列表（查询其他玩家） */
+  fetchPlayerMatchList(targetPuuid: string, summonerName: string, profileIconId: number, summonerLevel: number, page = 1, pageSize = 20): Promise<MatchListData> {
+    console.log(`[LCU:PRELOAD] fetchPlayerMatchList 调用: puuid=${targetPuuid.slice(0, 8)}… page=${page}`)
+    return ipcRenderer.invoke('lcu:fetch-player-match-list', targetPuuid, summonerName, profileIconId, summonerLevel, page, pageSize)
   },
 
   /** 批量拉取对局完整详情（并发，用于分析） */

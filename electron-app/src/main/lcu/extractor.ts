@@ -478,6 +478,98 @@ function buildGameSummary(g: any, selfPuuid: string): GameSummary {
   }
 }
 
+/** 以指定 PUUID 拉取对局列表（无需当前召唤师，用于查询其他玩家） */
+export async function fetchMatchListForPlayer(
+  client: LcuHttpClient,
+  targetPuuid: string,
+  summonerName: string,
+  profileIconId: number,
+  summonerLevel: number,
+  _page: number = 1,
+  _pageSize: number = 20
+): Promise<MatchListData> {
+  const conn = findLolClient()
+  if (!conn) throw new Error('未找到运行中的 LOL 客户端')
+
+  const puuid = targetPuuid
+
+  const ranked = await client.getRankedStats(puuid)
+
+  const firstPage = await client.getMatchHistory(puuid, 0, PAGE_SIZE - 1)
+  const firstMeta = firstPage?.games || {}
+  const totalGames: number = firstMeta.gameCount || 0
+  const targetCount = Math.min(totalGames, MAX_FETCH_COUNT)
+
+  console.log(
+    `[LCU:MAIN] fetchMatchListForPlayer PUUID=${puuid.slice(0,8)}…: ` +
+    `初始分页 beg=0 end=${PAGE_SIZE - 1} → ` +
+    `返回${(firstMeta.games || []).length}场 gameCount=${totalGames} target=${targetCount}`
+  )
+
+  const allSummaries: any[] = [...(firstMeta.games || [])]
+
+  while (allSummaries.length < targetCount) {
+    const beg = allSummaries.length
+    const end = Math.min(beg + PAGE_SIZE - 1, targetCount - 1)
+    const page = await client.getMatchHistory(puuid, beg, end)
+    const pageGames = page?.games?.games || []
+    if (pageGames.length === 0) break
+    allSummaries.push(...pageGames)
+  }
+
+  console.log(`[LCU:MAIN] fetchMatchListForPlayer 分页完成: 共 ${allSummaries.length} 场摘要`)
+
+  const detailMap = new Map<number, any>()
+  for (let i = 0; i < allSummaries.length; i += DETAIL_CONCUR) {
+    const batch = allSummaries.slice(i, i + DETAIL_CONCUR)
+    const results = await Promise.all(
+      batch.map(g =>
+        client.getGameDetail(g.gameId).catch((err: any) => {
+          console.warn(`[LCU:MAIN] 详情 #${g.gameId} 加载失败: ${err.message || err}`)
+          return null
+        })
+      )
+    )
+    for (const d of results) {
+      if (d) detailMap.set(d.gameId, d)
+    }
+  }
+  console.log(`[LCU:MAIN] fetchMatchListForPlayer 详情补载: ${detailMap.size}/${allSummaries.length} 场`)
+
+  const rawGames = allSummaries.map(g => {
+    const detail = detailMap.get(g.gameId)
+    if (detail) {
+      return { ...g, participants: detail.participants, participantIdentities: detail.participantIdentities, teams: detail.teams }
+    }
+    return g
+  })
+
+  rawGames.sort((a, b) => {
+    const ta = a.gameCreationDate ? new Date(a.gameCreationDate).getTime() : (a.gameCreation || 0)
+    const tb = b.gameCreationDate ? new Date(b.gameCreationDate).getTime() : (b.gameCreation || 0)
+    return tb - ta
+  })
+
+  const games: GameSummary[] = rawGames.map((g: any) => buildGameSummary(g, puuid))
+
+  const summonerInfo: SummonerInfo = {
+    puuid,
+    name: summonerName,
+    level: summonerLevel,
+    region: conn.region,
+    platform: conn.rsoPlatformId,
+    profileIconId,
+  }
+
+  return {
+    summoner: summonerInfo,
+    ranked: extractRankedData(ranked),
+    totalGames,
+    pageSize: 0,
+    games,
+  }
+}
+
 // ═══════════════════════════════════════════════════════════
 // 批量拉取对局详情（并发，用于分析）
 // ═══════════════════════════════════════════════════════════

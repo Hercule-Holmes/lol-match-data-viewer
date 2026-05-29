@@ -7,10 +7,11 @@ import { findLolClient, LcuHttpClient } from '../lcu/client'
 import {
   fetchAllMatchData,
   fetchMatchList,
+  fetchMatchListForPlayer,
   fetchGameDetailsBatched,
   fetchGameData,
 } from '../lcu/extractor'
-import type { LcuConnectionInfo, MatchData, MatchListData, GameRecord, GameDataCache } from '@shared/types'
+import type { LcuConnectionInfo, MatchData, MatchListData, GameRecord, GameDataCache, LcuSummoner } from '@shared/types'
 
 export interface LcuHandlersContext {
   /** 当 check-connection 发现 LCU 时回调，用于缓存认证信息给 lcu-asset 协议代理 */
@@ -29,6 +30,15 @@ export function registerLcuHandlers(ctx: LcuHandlersContext = {}) {
       console.log('[LCU:MAIN] 未找到运行中的 LCU 客户端')
     }
     return conn
+  })
+
+  // 获取当前召唤师信息
+  ipcMain.handle('lcu:current-summoner', async (): Promise<LcuSummoner> => {
+    console.log('[LCU:MAIN] current-summoner 被调用')
+    const conn = findLolClient()
+    if (!conn) throw new Error('未找到运行中的 LOL 客户端')
+    const client = new LcuHttpClient(conn)
+    return client.getCurrentSummoner()
   })
 
   // 拉取全部对局数据（旧版，较重）
@@ -98,6 +108,33 @@ export function registerLcuHandlers(ctx: LcuHandlersContext = {}) {
       const results = await fetchGameDetailsBatched(client, gameIds)
       console.log(`[LCU:MAIN] fetch-game-details 完成: ${results.length}/${gameIds.length} 场`)
       return results
+    }
+  )
+
+  // 通过召唤师 ID/名字/PUUID 查询任意玩家
+  ipcMain.handle(
+    'lcu:lookup-summoner',
+    async (_event, query: { summonerId?: number; name?: string; puuid?: string }): Promise<LcuSummoner> => {
+      console.log(`[LCU:MAIN] lookup-summoner: ${query.summonerId ? `id=${query.summonerId}` : query.name ? `name=${query.name}` : `puuid=${query.puuid?.slice(0, 8)}…`}`)
+      const conn = findLolClient()
+      if (!conn) throw new Error('未找到运行中的 LOL 客户端')
+      const client = new LcuHttpClient(conn)
+      if (query.summonerId) return client.getSummonerById(query.summonerId)
+      if (query.name) return client.getSummonerByName(query.name)
+      if (query.puuid) return client.getSummonerByPuuid(query.puuid)
+      throw new Error('请提供 summonerId、name 或 puuid')
+    }
+  )
+
+  // 以指定 PUUID 拉取对局列表（查询其他玩家）
+  ipcMain.handle(
+    'lcu:fetch-player-match-list',
+    async (_event, targetPuuid: string, summonerName: string, profileIconId: number, summonerLevel: number, page: number, pageSize: number): Promise<MatchListData> => {
+      console.log(`[LCU:MAIN] fetch-player-match-list: puuid=${targetPuuid.slice(0, 8)}… name=${summonerName}, page=${page}`)
+      const conn = findLolClient()
+      if (!conn) throw new Error('未找到运行中的 LOL 客户端')
+      const client = new LcuHttpClient(conn)
+      return fetchMatchListForPlayer(client, targetPuuid, summonerName, profileIconId, summonerLevel, page, pageSize)
     }
   )
 

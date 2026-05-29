@@ -188,12 +188,31 @@ export class LcuHttpClient {
 
   // ── 召唤师与战绩 ──
 
-  async getCurrentSummoner() {
-    return this.get<{
-      puuid: string
-      displayName: string
-      summonerLevel: number
-    }>('/lol-summoner/v1/current-summoner')
+  async getCurrentSummoner(): Promise<import('@shared/types').LcuSummoner> {
+    return this.get<import('@shared/types').LcuSummoner>(
+      '/lol-summoner/v1/current-summoner'
+    )
+  }
+
+  /** 通过召唤师数字 ID 查询任意玩家 */
+  async getSummonerById(summonerId: number) {
+    return this.get<import('@shared/types').LcuSummoner>(
+      `/lol-summoner/v1/summoners/${summonerId}`
+    )
+  }
+
+  /** 通过旧式召唤师名查询（可能不支持 Riot ID #tag 格式） */
+  async getSummonerByName(name: string) {
+    return this.get<import('@shared/types').LcuSummoner>(
+      `/lol-summoner/v1/summoners?name=${encodeURIComponent(name)}`
+    )
+  }
+
+  /** 通过 PUUID 查询召唤师（验证用） */
+  async getSummonerByPuuid(puuid: string) {
+    return this.get<import('@shared/types').LcuSummoner>(
+      `/lol-summoner/v1/summoners/by-puuid/${puuid}`
+    )
   }
 
   async getMatchHistory(puuid: string, beg = 0, end = 19) {
