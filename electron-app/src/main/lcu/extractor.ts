@@ -251,8 +251,12 @@ export function extractChampionMasteryForGame(
 // 对标 LeagueAkari：使用 begIndex/endIndex 分页查询，而非 gameId 递减追溯
 // ═══════════════════════════════════════════════════════════
 
-/** 单次 getMatchHistory 请求的游戏数量（LCU API 实际上限 ~200，设为此值用满每次请求） */
-const PAGE_SIZE = 200
+/**
+ * 单次 getMatchHistory 请求的 endIndex 范围。
+ * endIndex 必须 ≥499 才能触发 LCU 从服务端懒加载（否则仅命中本地缓存 ≈20 场）。
+ * 服务端实际返回上限 ≈200 场，超出部分由分页去重逻辑自动跳过。
+ */
+const PAGE_SIZE = 500
 /** 目标拉取的对局总数上限（安全阀，分页在 LCU 返回重复/空时自动停止） */
 const MAX_FETCH_COUNT = 2000
 /** 每次并行调用 getGameDetail 的数量 */
