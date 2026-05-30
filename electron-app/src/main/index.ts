@@ -5,8 +5,7 @@
  * - 注册 lcu-asset:// 自定义协议代理 LCU 图片资源
  */
 import { app, BrowserWindow, ipcMain, Menu, shell, protocol } from 'electron'
-import { readdirSync } from 'fs'
-import { join } from 'path'
+import { existsSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import axios, { AxiosInstance } from 'axios'
 import http from 'http'
@@ -226,6 +225,9 @@ ipcMain.handle('settings:set', async (_event, key: string, value: any) => {
 // 打开日志目录
 ipcMain.handle('logs:open-dir', async () => {
   const logDir = logger.logDir
+  if (!existsSync(logDir)) {
+    mkdirSync(logDir, { recursive: true })
+  }
   const err = await shell.openPath(logDir)
   if (err) console.error(`[MAIN] 打开日志目录失败: ${err}`)
 })

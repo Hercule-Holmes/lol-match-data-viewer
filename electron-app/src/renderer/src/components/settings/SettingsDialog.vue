@@ -6,7 +6,7 @@
     style="width: 420px"
     :bordered="false"
     size="huge"
-    @update:show="(v: boolean) => !v && $emit('close')"
+    :on-update:show="onModalUpdateShow"
   >
     <div class="settings-body">
       <!-- 自动更新 -->
@@ -55,11 +55,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, watch } from 'vue'
 import { NModal, NSwitch, NButton, NDivider, NA, useMessage } from 'naive-ui'
 import pkg from '../../../../../package.json'
 
-defineProps<{
+const props = defineProps<{
   show: boolean
 }>()
 
@@ -71,7 +71,9 @@ const message = useMessage()
 const appVersion = pkg.version
 const autoUpdate = ref(true)
 
-onMounted(async () => {
+// 每次对话框打开时重新加载设置
+watch(() => props.show, async (visible) => {
+  if (!visible) return
   try {
     const settings = await window.lcuApi.getSettings()
     autoUpdate.value = settings.autoUpdate !== false
@@ -80,12 +82,15 @@ onMounted(async () => {
   }
 })
 
+function onModalUpdateShow(v: boolean) {
+  if (!v) emit('close')
+}
+
 async function onAutoUpdateToggle(val: boolean) {
   autoUpdate.value = val
   try {
     await window.lcuApi.setSetting('autoUpdate', val)
     if (val) {
-      // 重新开启时立即检查一次更新
       window.lcuApi.checkForUpdates().catch(() => {})
     }
   } catch (e: any) {
