@@ -37,7 +37,7 @@
   },
   "build": {
     "appId": "com.lol-match-data.viewer",
-    "productName": "LOL Match Data Viewer",
+    "productName": "LOL-Match-Data-Viewer",
     "npmRebuild": false,
     "electronDist": "./node_modules/electron/dist",
     "directories": {
