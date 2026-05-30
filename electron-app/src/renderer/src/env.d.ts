@@ -20,6 +20,10 @@ interface LcuApi {
   fetchGameData(): Promise<import('@shared/types').GameDataCache>
   onUpdateStatus(callback: (status: any) => void): () => void
   quitAndInstall(): void
+  checkForUpdates(): Promise<any>
+  getSettings<T = any>(): Promise<T>
+  setSetting(key: string, value: any): Promise<void>
+  openLogsDir(): Promise<void>
 }
 
 declare global {

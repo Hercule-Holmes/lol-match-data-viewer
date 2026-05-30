@@ -5,6 +5,7 @@
  */
 import { autoUpdater } from 'electron-updater'
 import { BrowserWindow } from 'electron'
+import { getSettings } from './settings'
 
 let updateDownloaded = false
 
@@ -39,7 +40,6 @@ export function initAutoUpdater(getMainWindow: () => BrowserWindow | null) {
 
   autoUpdater.on('download-progress', (progress) => {
     const pct = Math.round(progress.percent)
-    // 每 20% 打一次日志，避免刷屏
     if (pct % 20 === 0) {
       console.log(`[UPDATER] 下载进度: ${pct}%`)
     }
@@ -62,11 +62,21 @@ export function initAutoUpdater(getMainWindow: () => BrowserWindow | null) {
     console.error(`[UPDATER] 更新检查失败: ${err.message || err}`)
   })
 
-  // 启动 10 秒后检查更新（避免与 LCU 扫描抢资源）
-  setTimeout(() => {
-    console.log('[UPDATER] 开始首次更新检查')
+  /** 执行更新检查（受 autoUpdate 设置控制） */
+  function checkForUpdates() {
+    const settings = getSettings()
+    if (!settings.autoUpdate) {
+      console.log('[UPDATER] 自动更新已关闭，跳过检查')
+      return
+    }
     autoUpdater.checkForUpdates().catch((err) => {
       console.error(`[UPDATER] 检查更新异常: ${err.message || err}`)
     })
+  }
+
+  // 启动 10 秒后检查更新（避免与 LCU 扫描抢资源）
+  setTimeout(() => {
+    console.log('[UPDATER] 开始首次更新检查')
+    checkForUpdates()
   }, 10_000)
 }

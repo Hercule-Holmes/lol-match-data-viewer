@@ -46,7 +46,7 @@
     <!-- 设置按钮 -->
     <NTooltip placement="right">
       <template #trigger>
-        <div class="menu-item">
+        <div class="menu-item" @click="showSettings = true">
           <div class="menu-item-inner">
             <NIcon class="menu-item-icon" :color="iconColor"><SettingsOutline /></NIcon>
           </div>
@@ -54,6 +54,8 @@
       </template>
       <span class="simple-popover" :style="{ color: textColor }">设置</span>
     </NTooltip>
+
+    <SettingsDialog :show="showSettings" @close="showSettings = false" />
   </div>
 </template>
 
@@ -67,10 +69,12 @@ import {
   SunnyOutline,
   SyncOutline
 } from '@vicons/ionicons5'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useThemeStore } from '@/stores/theme'
+import SettingsDialog from '@/components/settings/SettingsDialog.vue'
 
 const themeStore = useThemeStore()
+const showSettings = ref(false)
 
 const iconColor = computed(() =>
   themeStore.isDark ? 'rgba(255, 255, 255, 0.8)' : 'rgba(0, 0, 0, 0.7)'

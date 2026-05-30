@@ -5,6 +5,8 @@
  * - 注册 lcu-asset:// 自定义协议代理 LCU 图片资源
  */
 import { app, BrowserWindow, ipcMain, Menu, shell, protocol } from 'electron'
+import { readdirSync } from 'fs'
+import { join } from 'path'
 import { join } from 'path'
 import axios, { AxiosInstance } from 'axios'
 import http from 'http'
@@ -12,6 +14,7 @@ import https from 'https'
 import { is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
 import { logger } from './utils/logger'
+import { getSettings, setSetting } from './utils/settings'
 import { initAutoUpdater } from './utils/updater'
 import { registerLcuHandlers } from './ipc/lcu-handlers'
 import type { LcuConnectionInfo } from '@shared/types'
@@ -199,6 +202,32 @@ ipcMain.handle('log:write', async (_event, level: string, ...args: any[]) => {
 ipcMain.handle('update:quit-and-install', () => {
   console.log('[UPDATER] 用户请求安装更新并重启')
   autoUpdater.quitAndInstall()
+})
+
+ipcMain.handle('update:check', async () => {
+  const settings = getSettings()
+  if (!settings.autoUpdate) {
+    console.log('[UPDATER] 自动更新已关闭，跳过手动检查')
+    return
+  }
+  console.log('[UPDATER] 用户手动触发更新检查')
+  return autoUpdater.checkForUpdates()
+})
+
+// 设置相关 handler
+ipcMain.handle('settings:get', async () => {
+  return getSettings()
+})
+
+ipcMain.handle('settings:set', async (_event, key: string, value: any) => {
+  setSetting(key, value)
+})
+
+// 打开日志目录
+ipcMain.handle('logs:open-dir', async () => {
+  const logDir = logger.logDir
+  const err = await shell.openPath(logDir)
+  if (err) console.error(`[MAIN] 打开日志目录失败: ${err}`)
 })
 
 // LCU 相关 handler（通过回调同步认证信息给 lcu-asset 协议代理）

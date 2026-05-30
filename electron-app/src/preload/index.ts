@@ -73,6 +73,26 @@ const api = {
   quitAndInstall(): void {
     ipcRenderer.invoke('update:quit-and-install')
   },
+
+  /** 手动检查更新 */
+  checkForUpdates(): Promise<any> {
+    return ipcRenderer.invoke('update:check')
+  },
+
+  /** 获取用户设置 */
+  getSettings<T = any>(): Promise<T> {
+    return ipcRenderer.invoke('settings:get')
+  },
+
+  /** 更新单个设置项 */
+  setSetting(key: string, value: any): Promise<void> {
+    return ipcRenderer.invoke('settings:set', key, value)
+  },
+
+  /** 打开日志目录 */
+  openLogsDir(): Promise<void> {
+    return ipcRenderer.invoke('logs:open-dir')
+  },
 }
 
 contextBridge.exposeInMainWorld('lcuApi', api)
