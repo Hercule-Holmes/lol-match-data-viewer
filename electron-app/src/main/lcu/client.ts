@@ -3,6 +3,8 @@
  * 对标 LeagueAkari shared/http-api-axios-helper/league-client 层的职责
  */
 import { execSync } from 'child_process'
+import fs from 'fs'
+import path from 'path'
 import axios, { AxiosInstance } from 'axios'
 import https from 'https'
 import net from 'net'
@@ -97,151 +99,140 @@ function tcpCheck(port: number, timeoutMs = 2000): Promise<boolean> {
   })
 }
 
-/** 通过 PowerShell 查找 LeagueClientUx.exe 进程并解析连接参数 */
+/** 用 Node.js 递归搜索已知 Riot Games 目录中的 lockfile，返回全路径列表 */
+function findLockfiles(): string[] {
+  const progFiles = process.env.ProgramFiles || 'C:\\Program Files'
+  const progFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)'
+  const localAppData = process.env.LOCALAPPDATA || ''
+
+  const roots = [
+    path.join(progFiles, 'Riot Games'),
+    path.join(progFilesX86, 'Riot Games'),
+    path.join(localAppData, 'Riot Games'),
+    'C:\\Riot Games', 'D:\\Riot Games', 'E:\\Riot Games',
+    'F:\\Riot Games', 'G:\\Riot Games',
+  ]
+
+  const results: string[] = []
+  for (const root of roots) {
+    if (!fs.existsSync(root)) continue
+    walk(root, 3)
+  }
+  return results
+
+  function walk(dir: string, depth: number) {
+    if (depth < 0) return
+    let entries: fs.Dirent[]
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name)
+      if (entry.name === 'lockfile' && entry.isFile()) {
+        results.push(full)
+      } else if (entry.isDirectory() && depth > 0) {
+        walk(full, depth - 1)
+      }
+    }
+  }
+}
+
+/** 通过 Node.js 文件搜索 + PS 命令行兜底 查找 LCU 连接参数 */
 export async function findLolClient(): Promise<LcuConnectionInfo | null> {
   try {
-    // ═══ 方案1：通过进程 Path 获取 lockfile 目录（大多数系统无需 admin）═════
+    // ═══ 方案1：Node.js 搜索 lockfile（无需 PowerShell / 无需管理员）══════
+    const lockfiles = findLockfiles()
+    for (const lf of lockfiles) {
+      try {
+        const content = fs.readFileSync(lf, 'utf-8')
+        const parsed = parseLockfile(content)
+        if (!parsed) continue
+        const alive = await tcpCheck(parsed.port)
+        if (!alive) continue
+        console.log(`[LCU:MAIN] 检测到 LCU (Node.js lockfile): port=${parsed.port}, pid=${parsed.pid}, path=${lf}`)
+        return { ...parsed, region: '', rsoPlatformId: '' }
+      } catch { /* 文件被删除/权限不足，继续下一个 */ }
+    }
+
+    // ═══ 方案2：PowerShell 通过进程路径找 lockfile（需能访问 .Path 属性）══════
     const lockfileResult = runPsScript(`
       $p = Get-Process -Name 'LeagueClientUx' -ErrorAction SilentlyContinue | Select-Object -First 1
-      if (-not $p) { exit }
+      if (-not $p) { exit 0 }
       try {
         $dir = Split-Path $p.Path -Parent -ErrorAction Stop
         $lf = Join-Path $dir 'lockfile'
-        if (Test-Path $lf) {
-          Get-Content $lf -Raw
-        }
+        if (Test-Path $lf) { Get-Content $lf -Raw }
       } catch {}
     `, PS_EXEC_TIMEOUT)
 
     if (lockfileResult) {
       const parsed = parseLockfile(lockfileResult)
       if (parsed) {
-        console.log(`[LCU:MAIN] 检测到 LCU (lockfile): port=${parsed.port}, pid=${parsed.pid}`)
-        // 尝试从进程中获取 region / rsoPlatformId（可选，仅用于信息展示）
-        const extraInfo = runPsScript(`
+        console.log(`[LCU:MAIN] 检测到 LCU (PS lockfile): port=${parsed.port}, pid=${parsed.pid}`)
+        // 尝试获取 region（可选，失败不影响）
+        const region = runPsScript(`
           $cmdline = (Get-CimInstance Win32_Process -Filter "ProcessId = ${parsed.pid}" | Select-Object -ExpandProperty CommandLine) 2>$null
-          if (-not $cmdline) { $cmdline = (Get-WmiObject Win32_Process -Filter "ProcessId = ${parsed.pid}" | Select-Object -ExpandProperty CommandLine) 2>$null }
           $cmdline
         `, 4000)
-
         return {
           ...parsed,
-          region: extractFromCmdline(extraInfo, /--region=([\w\-_]+)/),
-          rsoPlatformId: extractFromCmdline(extraInfo, /--rso_platform_id=([\w\-_]+)/),
+          region: extractFromCmdline(region, /--region=([\w\-_]+)/),
+          rsoPlatformId: extractFromCmdline(region, /--rso_platform_id=([\w\-_]+)/),
         }
       }
     }
 
-    // ═══ 方案2：搜索常见安装路径中的 lockfile（完全无需 admin 权限）══════
-    const foundLf = runPsScript(`
-      $p = Get-Process -Name 'LeagueClientUx' -ErrorAction SilentlyContinue | Select-Object -First 1
-      if (-not $p) { exit }
-
-      # 检查固定路径（覆盖常见安装位置）
-      $fixedPaths = @(
-        "$env:ProgramFiles\\Riot Games\\League of Legends\\lockfile",
-        "\${env:ProgramFiles(x86)}\\Riot Games\\League of Legends\\lockfile",
-        "$env:LOCALAPPDATA\\Riot Games\\League of Legends\\lockfile",
-        "C:\\Riot Games\\League of Legends\\lockfile",
-        "D:\\Riot Games\\League of Legends\\lockfile",
-        "E:\\Riot Games\\League of Legends\\lockfile",
-        "F:\\Riot Games\\League of Legends\\lockfile",
-        "G:\\Riot Games\\League of Legends\\lockfile"
-      )
-      foreach ($fp in $fixedPaths) {
-        if (Test-Path $fp) {
-          Get-Content $fp -Raw
-          exit
-        }
-      }
-
-      # 搜索 Riot Games 目录树（深度有限）
-      $roots = @("$env:ProgramFiles\\Riot Games", "\${env:ProgramFiles(x86)}\\Riot Games", "C:\\Riot Games", "D:\\Riot Games", "E:\\Riot Games", "F:\\Riot Games", "G:\\Riot Games", "$env:LOCALAPPDATA\\Riot Games")
-      foreach ($root in $roots) {
-        if (Test-Path $root) {
-          $lf = Get-ChildItem -Path $root -Filter 'lockfile' -Recurse -Depth 3 -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($lf) {
-            Get-Content $lf.FullName -Raw
-            exit
-          }
-        }
-      }
-    `, 8000)
-
-    if (foundLf) {
-      const parsed = parseLockfile(foundLf)
-      if (parsed) {
-        console.log(`[LCU:MAIN] 检测到 LCU (lockfile搜索): port=${parsed.port}, pid=${parsed.pid}`)
-        // TCP 健康检查：验证该端口确实有 LCU 在监听（避免过期 lockfile）
-        const alive = await tcpCheck(parsed.port)
-        if (alive) {
-          console.log(`[LCU:MAIN] lockfile 端口 ${parsed.port} TCP 连通正常`)
-          return { ...parsed, region: '', rsoPlatformId: '' }
-        }
-        console.warn(`[LCU:MAIN] lockfile 端口 ${parsed.port} TCP 不通，可能为过期文件，继续尝试其他方案...`)
-      }
-    }
-
-    // ═══ 方案3：WMIC 直读命令行（不依赖 PowerShell，部分系统需 admin）══════
+    // ═══ 方案3：WMIC 读命令行（Win10 可用，Win11 24H2 已移除）══════
     const wmicRaw = runWmic('LeagueClientUx.exe', 8000)
     if (wmicRaw) {
       const wmicParsed = parseWmicOutput(wmicRaw)
       if (wmicParsed) {
         console.log(`[LCU:MAIN] 检测到 LCU (WMIC): port=${wmicParsed.port}, pid=${wmicParsed.pid}`)
-        // 尝试从 lockfile 补全 region 信息
-        const extraInfo = runPsScript(`
+        const region = runPsScript(`
           $cmdline = (Get-CimInstance Win32_Process -Filter "ProcessId = ${wmicParsed.pid}" | Select-Object -ExpandProperty CommandLine) 2>$null
           $cmdline
         `, 4000)
         return {
           ...wmicParsed,
-          region: extractFromCmdline(extraInfo, /--region=([\w\-_]+)/),
-          rsoPlatformId: extractFromCmdline(extraInfo, /--rso_platform_id=([\w\-_]+)/),
+          region: extractFromCmdline(region, /--region=([\w\-_]+)/),
+          rsoPlatformId: extractFromCmdline(region, /--rso_platform_id=([\w\-_]+)/),
         }
       }
     }
 
-    // ═══ 方案4：回退到 PowerShell Get-CimInstance 解析命令行（最终兜底）══════
+    // ═══ 方案4：PowerShell Get-CimInstance 命令行兜底（需管理员）═════
     const cmdline = runPsScript(`
       $p = Get-Process -Name 'LeagueClientUx' -ErrorAction SilentlyContinue | Select-Object -First 1
-      if (-not $p) { exit }
-      $cmdline = (Get-CimInstance Win32_Process -Filter "ProcessId = $($p.Id)" | Select-Object -ExpandProperty CommandLine)
-      if (-not $cmdline) {
-        $cmdline = (Get-WmiObject Win32_Process -Filter "ProcessId = $($p.Id)" | Select-Object -ExpandProperty CommandLine)
-      }
+      if (-not $p) { exit 0 }
+      $cmdline = (Get-CimInstance Win32_Process -Filter "ProcessId = $($p.Id)" | Select-Object -ExpandProperty CommandLine) 2>$null
+      if (-not $cmdline) { $cmdline = (Get-WmiObject Win32_Process -Filter "ProcessId = $($p.Id)" | Select-Object -ExpandProperty CommandLine) 2>$null }
       $cmdline
     `, PS_EXEC_TIMEOUT)
 
-    if (!cmdline) {
-      // 输出进程名辅助诊断
-      const diagResult = runPsScript(`
-        Get-Process -Name '*League*','*LOL*','*Riot*' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name -Unique
-        Get-CimInstance Win32_Process | Where-Object { $_.Name -like '*League*' -or $_.Name -like '*LOL*' -or $_.Name -like '*英雄联盟*' -or $_.Name -like '*Riot*' } | Select-Object -ExpandProperty Name | Sort-Object -Unique
-      `, 8000)
-
-      if (diagResult) {
-        console.log(`[LCU:MAIN] 全部4种方案均失败。检测到相关进程: ${diagResult.replace(/\n/g, ', ')}`)
-      } else {
-        console.log('[LCU:MAIN] 全部4种方案均失败，且未检测到任何 LOL 进程 — 请确认游戏已启动并登录')
+    if (cmdline) {
+      const port = extractFromCmdline(cmdline, /--app-port=(\d+)/)
+      const authToken = extractFromCmdline(cmdline, /--remoting-auth-token=([\w\-_]+)/)
+      if (port && authToken) {
+        console.log(`[LCU:MAIN] 检测到 LCU (PS cmdline): port=${port}`)
+        return {
+          port: parseInt(port), authToken,
+          pid: parseInt(extractFromCmdline(cmdline, /--app-pid=(\d+)/) || '0'),
+          region: extractFromCmdline(cmdline, /--region=([\w\-_]+)/),
+          rsoPlatformId: extractFromCmdline(cmdline, /--rso_platform_id=([\w\-_]+)/),
+        }
       }
-      return null
     }
 
-    const port = extractFromCmdline(cmdline, /--app-port=(\d+)/)
-    const authToken = extractFromCmdline(cmdline, /--remoting-auth-token=([\w\-_]+)/)
-    if (!port || !authToken) {
-      console.warn(`[LCU:MAIN] 找到进程但无法解析连接参数, cmdline=${cmdline.slice(0, 200)}`)
-      return null
-    }
+    // 全部失败 — 诊断输出
+    const diagResult = runPsScript(`
+      Get-Process -Name '*League*','*LOL*','*Riot*' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name -Unique
+      Get-CimInstance Win32_Process | Where-Object { $_.Name -like '*League*' -or $_.Name -like '*LOL*' -or $_.Name -like '*Riot*' } | Select-Object -ExpandProperty Name | Sort-Object -Unique
+    `, 8000)
 
-    console.log(`[LCU:MAIN] 检测到 LCU (PS cmdline): port=${port}, region=${extractFromCmdline(cmdline, /--region=([\w\-_]+)/)}`)
-    return {
-      port: parseInt(port),
-      authToken,
-      pid: parseInt(extractFromCmdline(cmdline, /--app-pid=(\d+)/) || '0'),
-      region: extractFromCmdline(cmdline, /--region=([\w\-_]+)/),
-      rsoPlatformId: extractFromCmdline(cmdline, /--rso_platform_id=([\w\-_]+)/),
+    if (diagResult) {
+      console.log(`[LCU:MAIN] 全部4种方案均失败。检测到相关进程: ${diagResult.replace(/\n/g, ', ')}`)
+    } else {
+      console.log('[LCU:MAIN] 全部4种方案均失败，且未检测到任何 LOL 进程 — 请确认游戏已启动并登录')
     }
+    return null
   } catch (err: any) {
     console.error(`[LCU:MAIN] 进程检测异常: ${err.message || err}`)
     return null
