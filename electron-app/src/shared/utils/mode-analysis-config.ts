@@ -124,7 +124,26 @@ const DEFAULT_CONFIG: ModeAnalysisConfig = {
 }
 
 // ═══════════════════════════════════════════════════════════
-// 各模式独立配置（当前均与默认一致，后续按需删减）
+// 海克斯大乱斗（KIWI）排除不适用的指标
+// ═══════════════════════════════════════════════════════════
+
+const KIWI_EXCLUDED_KEYS = new Set([
+  'goldSpent',            // 花钱 —— 只有一件神话装，不适用
+  'vision',               // 视野 —— 无视野机制
+  'wardsPlaced',          // 插眼
+  'wardsKilled',          // 排眼
+  'firstBlood',           // 一血
+  'firstTower',           // 一塔
+  'turrets',              // 推塔
+  'inhibitorKills',       // 破水晶
+  'neutralMinionsKilled', // 野怪击杀
+  'combatScore',          // 战斗评分
+])
+
+const KIWI_BASIC_METRICS = ALL_BASIC_METRICS.filter(m => !KIWI_EXCLUDED_KEYS.has(m.key))
+
+// ═══════════════════════════════════════════════════════════
+// 各模式独立配置
 // ═══════════════════════════════════════════════════════════
 
 const MODE_CONFIGS: Record<string, ModeAnalysisConfig> = {
@@ -154,7 +173,7 @@ const MODE_CONFIGS: Record<string, ModeAnalysisConfig> = {
   },
   KIWI: {
     displayName: '海克斯大乱斗',
-    basicMetrics: ALL_BASIC_METRICS,
+    basicMetrics: KIWI_BASIC_METRICS,
     advancedMetrics: ALL_ADVANCED_METRICS,
     podiumTitles: DEFAULT_PODIUM_TITLES,
     advancedBestTitles: DEFAULT_ADVANCED_BEST,

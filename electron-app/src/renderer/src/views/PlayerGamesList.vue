@@ -119,13 +119,23 @@
           />
         </div>
 
-        <div class="right-panel">
+        <div
+          class="right-panel"
+          @mousemove="onPanelMouseMove"
+          @mouseup="onDragEnd"
+          @mouseleave="onDragEnd"
+        >
           <div v-if="currentPageGames.length === 0" class="empty-card-state">
             <span>无对局数据</span>
           </div>
-          <TransitionGroup name="list" tag="div" v-else>
+          <TransitionGroup
+            v-else
+            name="list"
+            tag="div"
+            @mousedown="onCardMouseDown"
+          >
             <MatchHistoryCard
-              v-for="g in currentPageGames"
+              v-for="(g, idx) in currentPageGames"
               :key="g.gameId"
               :game="g"
               :self-puuid="listData.summoner.puuid"
@@ -140,7 +150,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, onMounted, ref, watch, type Ref } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   NButton, NInputNumber, NSelect, NIcon, NSpin, useMessage, useDialog,
@@ -294,6 +304,62 @@ function toggleGame(gameId: number) {
   }
 }
 
+/** 拖拽框选状态 */
+const dragState = ref<{ anchorIndex: number; mode: 'select' | 'deselect' } | null>(null)
+
+function applyRange(fromIdx: number, toIdx: number, mode: 'select' | 'deselect') {
+  const start = Math.min(fromIdx, toIdx)
+  const end = Math.max(fromIdx, toIdx)
+  const rangeIds = new Set(
+    currentPageGames.value.slice(start, end + 1).map(g => g.gameId)
+  )
+  if (mode === 'select') {
+    const merged = new Set(checkedRowKeys.value)
+    for (const id of rangeIds) merged.add(id)
+    checkedRowKeys.value = Array.from(merged)
+  } else {
+    checkedRowKeys.value = checkedRowKeys.value.filter(id => !rangeIds.has(id))
+  }
+}
+
+function onCardMouseDown(event: MouseEvent) {
+  const card = (event.target as HTMLElement).closest('[data-game-id]') as HTMLElement | null
+  if (!card) return
+  const gameId = Number(card.dataset.gameId)
+  const idx = currentPageGames.value.findIndex(g => g.gameId === gameId)
+  if (idx === -1) return
+
+  const wasSelected = checkedRowKeys.value.includes(gameId)
+  const mode: 'select' | 'deselect' = wasSelected ? 'deselect' : 'select'
+
+  // 如果点在 checkbox 区域内，checkbox 自身的 click 事件会处理 toggle，这里不重复调用
+  if (!(event.target as HTMLElement).closest('.zone-checkbox')) {
+    toggleGame(gameId)
+  }
+
+  dragState.value = { anchorIndex: idx, mode }
+}
+
+function onPanelMouseMove(event: MouseEvent) {
+  if (!dragState.value) return
+  const card = (event.target as HTMLElement).closest('[data-game-id]') as HTMLElement | null
+  if (!card) return
+  const gameId = Number(card.dataset.gameId)
+  const idx = currentPageGames.value.findIndex(g => g.gameId === gameId)
+  if (idx === -1 || idx === dragState.value.anchorIndex) return
+
+  const anchor = dragState.value.anchorIndex
+  if (idx > anchor) {
+    applyRange(anchor + 1, idx, dragState.value.mode)
+  } else {
+    applyRange(idx, anchor - 1, dragState.value.mode)
+  }
+}
+
+function onDragEnd() {
+  dragState.value = null
+}
+
 function goToAnalysis() {
   if (checkedRowKeys.value.length === 0) return
 
@@ -339,6 +405,11 @@ onMounted(async () => {
   if (props.puuid && !loading.value) {
     await refreshData()
   }
+  window.addEventListener('mouseup', onDragEnd)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('mouseup', onDragEnd)
 })
 </script>
 

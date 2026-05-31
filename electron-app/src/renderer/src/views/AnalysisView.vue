@@ -269,6 +269,7 @@
               <div class="ranking-section">
                 <h4>{{ selectedCategory?.label }} — 玩家排名</h4>
                 <n-data-table
+                  :key="'adv-' + themeStore.isDark"
                   :columns="advancedRankingColumns"
                   :data="advancedMetricRanking"
                   :row-key="(row: MetricRankEntry) => row.playerName"
@@ -353,6 +354,7 @@
             <div class="ranking-section">
               <h4>{{ selectedCategory?.label }} — 玩家排名</h4>
               <n-data-table
+                :key="'basic-' + themeStore.isDark"
                 :columns="rankingColumns"
                 :data="metricRanking"
                 :row-key="(row: MetricRankEntry) => row.playerName"
@@ -395,10 +397,12 @@ import AugmentDisplay from '@/components/widgets/AugmentDisplay.vue'
 import { isBuildItem } from '@shared/utils/mappings'
 import { getModeAnalysisConfig, type MetricDef } from '@shared/utils/mode-analysis-config'
 import { useGameDataStore } from '@/stores/game-data'
+import { useThemeStore } from '@/stores/theme'
 
 const router = useRouter()
 const message = useMessage()
 const gds = useGameDataStore()
+const themeStore = useThemeStore()
 
 const loading = ref(false)
 const result = ref<AnalysisResult | null>(null)
@@ -1174,53 +1178,60 @@ function shortName(name: string): string {
 }
 
 /** 排名表列定义 */
-const rankingColumns = computed(() => [
-  {
-    title: '#',
-    key: 'rank',
-    width: 48,
-    render: (_row: MetricRankEntry, idx: number) =>
-      h('span', { style: idx < 3 ? 'font-weight:700;color:#e8a840;font-size:14px' : 'color:rgba(255,255,255,0.4);font-size:14px' }, String(idx + 1)),
-  },
-  {
-    title: '玩家',
-    key: 'playerName',
-    width: 150,
-    render: (row: MetricRankEntry) =>
-      h('span', { style: 'font-weight:600;font-size:14px' }, shortName(row.playerName)),
-  },
-  {
-    title: '总计',
-    key: 'total',
-    width: 100,
-    render: (row: MetricRankEntry) =>
-      h('span', { style: 'font-weight:700;font-family:monospace;font-size:14px' }, selectedCategory.value?.fmt(row.total) || String(row.total)),
-  },
-  {
-    title: '场均',
-    key: 'average',
-    width: 100,
-    render: (row: MetricRankEntry) =>
-      h('span', { style: 'font-family:monospace;font-size:14px' }, selectedCategory.value?.fmt(row.average) || row.average.toFixed(1)),
-  },
-  { title: '场次', key: 'gameCount', width: 60 },
-  {
-    title: '胜率',
-    key: 'winRate',
-    width: 70,
-    render: (row: MetricRankEntry) => h('span', { style: 'font-size:14px' }, `${row.winRate.toFixed(0)}%`),
-  },
-])
+const rankingColumns = computed(() => {
+  void themeStore.isDark // 依赖主题，确保切换时重新计算
+  const mutedColor = 'var(--text-tertiary)'
+  return [
+    {
+      title: '#',
+      key: 'rank',
+      width: 48,
+      render: (_row: MetricRankEntry, idx: number) =>
+        h('span', { style: idx < 3 ? 'font-weight:700;color:#e8a840;font-size:14px' : `color:${mutedColor};font-size:14px` }, String(idx + 1)),
+    },
+    {
+      title: '玩家',
+      key: 'playerName',
+      width: 150,
+      render: (row: MetricRankEntry) =>
+        h('span', { style: 'font-weight:600;font-size:14px' }, shortName(row.playerName)),
+    },
+    {
+      title: '总计',
+      key: 'total',
+      width: 100,
+      render: (row: MetricRankEntry) =>
+        h('span', { style: 'font-weight:700;font-family:monospace;font-size:14px' }, selectedCategory.value?.fmt(row.total) || String(row.total)),
+    },
+    {
+      title: '场均',
+      key: 'average',
+      width: 100,
+      render: (row: MetricRankEntry) =>
+        h('span', { style: 'font-family:monospace;font-size:14px' }, selectedCategory.value?.fmt(row.average) || row.average.toFixed(1)),
+    },
+    { title: '场次', key: 'gameCount', width: 60 },
+    {
+      title: '胜率',
+      key: 'winRate',
+      width: 70,
+      render: (row: MetricRankEntry) => h('span', { style: 'font-size:14px' }, `${row.winRate.toFixed(0)}%`),
+    },
+  ]
+})
 
 /** 高阶数据排名表列（比值 + 原始数据列） */
 const advancedRankingColumns = computed(() => {
+  void themeStore.isDark
+  const mutedColor = 'var(--text-tertiary)'
+  const secondaryColor = 'var(--text-secondary)'
   const cols: any[] = [
     {
       title: '#',
       key: 'rank',
       width: 48,
       render: (_row: MetricRankEntry, idx: number) =>
-        h('span', { style: idx === 0 ? 'font-weight:700;color:#e8a840;font-size:14px' : idx === advancedMetricRanking.value.length - 1 ? 'font-weight:700;color:#e84057;font-size:14px' : 'color:rgba(255,255,255,0.4);font-size:14px' }, String(idx + 1)),
+        h('span', { style: idx === 0 ? 'font-weight:700;color:#e8a840;font-size:14px' : idx === advancedMetricRanking.value.length - 1 ? 'font-weight:700;color:#e84057;font-size:14px' : `color:${mutedColor};font-size:14px` }, String(idx + 1)),
     },
     {
       title: '玩家',
@@ -1248,7 +1259,7 @@ const advancedRankingColumns = computed(() => {
         width: 90,
         render: (row: MetricRankEntry) => {
           const rawItem = row.raw?.find(x => x.label === r.label)
-          return h('span', { style: 'font-family:monospace;font-size:13px;color:rgba(255,255,255,0.65)' }, rawItem ? fmtNum(rawItem.value) : '-')
+          return h('span', { style: `font-family:monospace;font-size:13px;color:${secondaryColor}` }, rawItem ? fmtNum(rawItem.value) : '-')
         },
       })
     }

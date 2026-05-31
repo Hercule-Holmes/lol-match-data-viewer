@@ -197,6 +197,7 @@
             <div class="ranking-section">
               <h4>{{ selectedCategory?.label }} — 好友排名</h4>
               <n-data-table
+                :key="'friend-' + themeStore.isDark"
                 :columns="friendColumns"
                 :data="sortedByMetric"
                 :row-key="(row: FriendStats) => row.puuid"
@@ -234,6 +235,9 @@ import {
   type FriendSummary,
 } from '@shared/utils/friend-analysis'
 import LcuImage from '@/components/widgets/LcuImage.vue'
+import { useThemeStore } from '@/stores/theme'
+
+const themeStore = useThemeStore()
 
 const loading = ref(false)
 const connected = ref(true)
@@ -380,7 +384,9 @@ const isItemMetric = computed(() =>
 
 /** 排名表列定义 */
 const friendColumns = computed(() => {
+  void themeStore.isDark
   const cat = selectedCategory.value
+  const mutedColor = 'var(--text-tertiary)'
   const cols: any[] = [
     {
       title: '#',
@@ -390,7 +396,7 @@ const friendColumns = computed(() => {
         h('span', {
           style: idx < 3
             ? 'font-weight:700;color:#e8a840;font-size:14px'
-            : 'color:rgba(255,255,255,0.35);font-size:14px'
+            : `color:${mutedColor};font-size:14px`
         }, String(idx + 1)),
     },
     {

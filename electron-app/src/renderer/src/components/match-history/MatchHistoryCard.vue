@@ -1,5 +1,5 @@
 <template>
-  <div class="match-history-card" :class="composedResultClass">
+  <div class="match-history-card" :class="composedResultClass" :data-game-id="game.gameId">
     <!-- 区域 1: 游戏信息 (112px) -->
     <div class="zone-game">
       <div class="mode" :title="formattedModeText">{{ formattedModeText }}</div>
