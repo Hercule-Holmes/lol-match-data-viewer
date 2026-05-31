@@ -93,6 +93,11 @@ const api = {
   openLogsDir(): Promise<void> {
     return ipcRenderer.invoke('logs:open-dir')
   },
+
+  /** 在默认浏览器中打开外部链接 */
+  openExternal(url: string): Promise<void> {
+    return ipcRenderer.invoke('shell:open-external', url)
+  },
 }
 
 contextBridge.exposeInMainWorld('lcuApi', api)

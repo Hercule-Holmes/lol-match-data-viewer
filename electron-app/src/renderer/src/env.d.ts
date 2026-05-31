@@ -24,6 +24,7 @@ interface LcuApi {
   getSettings<T = any>(): Promise<T>
   setSetting(key: string, value: any): Promise<void>
   openLogsDir(): Promise<void>
+  openExternal(url: string): Promise<void>
 }
 
 declare global {

@@ -232,6 +232,11 @@ ipcMain.handle('logs:open-dir', async () => {
   if (err) console.error(`[MAIN] 打开日志目录失败: ${err}`)
 })
 
+// 打开外部链接
+ipcMain.handle('shell:open-external', async (_event, url: string) => {
+  await shell.openExternal(url)
+})
+
 // LCU 相关 handler（通过回调同步认证信息给 lcu-asset 协议代理）
 registerLcuHandlers({
   onConnectionFound(conn: LcuConnectionInfo) {

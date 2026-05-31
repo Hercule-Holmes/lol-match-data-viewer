@@ -145,9 +145,7 @@ export async function findLolClient(): Promise<LcuConnectionInfo | null> {
         "D:\\Riot Games\\League of Legends\\lockfile",
         "E:\\Riot Games\\League of Legends\\lockfile",
         "F:\\Riot Games\\League of Legends\\lockfile",
-        "G:\\Riot Games\\League of Legends\\lockfile",
-        "C:\\Program Files\\Riot Games\\Riot Client\\lockfile",
-        "C:\\Riot Games\\Riot Client\\lockfile"
+        "G:\\Riot Games\\League of Legends\\lockfile"
       )
       foreach ($fp in $fixedPaths) {
         if (Test-Path $fp) {
@@ -253,6 +251,8 @@ export async function findLolClient(): Promise<LcuConnectionInfo | null> {
 function parseLockfile(content: string): { port: number; authToken: string; pid: number } | null {
   const parts = content.trim().split(':')
   if (parts.length < 4) return null
+  // 必须是 LeagueClient（非 RiotClient），否则 API 全部 404
+  if (parts[0] !== 'LeagueClient') return null
   const port = parseInt(parts[2]) || 0
   const authToken = parts[3]
   const pid = parseInt(parts[1]) || 0

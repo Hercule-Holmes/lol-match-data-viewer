@@ -31,6 +31,17 @@
 
       <n-divider />
 
+      <!-- 意见反馈 -->
+      <div class="setting-row">
+        <div class="setting-label">
+          <span class="setting-title">意见反馈</span>
+          <span class="setting-desc">通过 GitHub Issue 提交功能建议或问题报告</span>
+        </div>
+        <n-button size="small" @click="openFeedback">反馈</n-button>
+      </div>
+
+      <n-divider />
+
       <!-- 关于 -->
       <div class="about-section">
         <span class="setting-title">关于</span>
@@ -102,6 +113,24 @@ async function onAutoUpdateToggle(val: boolean) {
 function openLogs() {
   window.lcuApi.openLogsDir().catch((e: any) => {
     message.error(`打开日志目录失败: ${e.message || e}`)
+  })
+}
+
+function openFeedback() {
+  const title = encodeURIComponent('[反馈] ')
+  const body = encodeURIComponent([
+    '## 问题/建议描述',
+    '',
+    '## 期望行为',
+    '',
+    '---',
+    `v${appVersion} | ${navigator.platform} | ${navigator.language}`,
+  ].join('\n'))
+  const url = `https://github.com/aqq2567/lol-match-data-viewer/issues/new?title=${title}&body=${body}`
+  console.log('[FEEDBACK] 打开链接:', url)
+  window.lcuApi.openExternal(url).catch((e: any) => {
+    console.error('[FEEDBACK] 打开失败:', e)
+    message.error(`打开浏览器失败: ${e.message || e}`)
   })
 }
 </script>
