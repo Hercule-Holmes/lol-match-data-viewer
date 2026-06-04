@@ -4,6 +4,7 @@
  * - 注册 IPC 处理器（日志 + LCU 数据拉取）
  * - 注册 lcu-asset:// 自定义协议代理 LCU 图片资源
  */
+import 'dotenv/config'
 import { app, BrowserWindow, ipcMain, Menu, shell, protocol } from 'electron'
 import { existsSync, mkdirSync } from 'fs'
 import { join } from 'path'
@@ -16,6 +17,7 @@ import { logger } from './utils/logger'
 import { getSettings, setSetting } from './utils/settings'
 import { initAutoUpdater } from './utils/updater'
 import { registerLcuHandlers } from './ipc/lcu-handlers'
+import { chatWithLLM } from './utils/llm'
 import { getLastConnection } from './lcu/client'
 
 // ═══════════════════════════════════════════════════════════
@@ -214,6 +216,24 @@ ipcMain.handle('update:check', async () => {
   }
   console.log('[UPDATER] 用户手动触发更新检查')
   return checkForUpdates()
+})
+
+// LLM 对话 handler
+ipcMain.handle('llm:chat', async (_event, messages: Array<{ role: string; content: string }>) => {
+  console.log(`[LLM:MAIN] llm:chat 收到请求: ${messages.length} 条消息`)
+  const sysMsg = messages.find(m => m.role === 'system')
+  if (sysMsg) {
+    const head = sysMsg.content.slice(0, 400)
+    console.log(`[LLM:MAIN] system prompt 头部 (${sysMsg.content.length} 字):\n${head}`)
+  }
+  try {
+    const reply = await chatWithLLM(messages as any)
+    console.log(`[LLM:MAIN] llm:chat 成功: 回复长度=${reply.length}`)
+    return { status: 'success', content: reply }
+  } catch (err: any) {
+    console.error(`[LLM:MAIN] llm:chat 失败: ${err.message}`)
+    return { status: 'error', message: err.message || String(err) }
+  }
 })
 
 // 设置相关 handler

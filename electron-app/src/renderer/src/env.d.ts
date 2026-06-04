@@ -25,6 +25,7 @@ interface LcuApi {
   setSetting(key: string, value: any): Promise<void>
   openLogsDir(): Promise<void>
   openExternal(url: string): Promise<void>
+  chatWithAI(messages: Array<{ role: string; content: string }>): Promise<{ status: string; content?: string; message?: string }>
 }
 
 declare global {

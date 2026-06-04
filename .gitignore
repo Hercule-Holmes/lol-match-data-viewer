@@ -30,3 +30,6 @@ output/logs/
 release/
 release.zip
 *.tsbuildinfo
+
+# Superpowers dev framework
+.superpowers/

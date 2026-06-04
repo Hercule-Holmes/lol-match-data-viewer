@@ -266,7 +266,8 @@ const DETAIL_CONCUR = 30
 /**
  * 拉取一页对局摘要
  * 国服 (TENCENT) 使用 begIndex（缩写），Riot 服可能使用 beginIndex（完整拼写）
- * 先用 begIndex，返回空/报错时降级 beginIndex
+ * begIndex 有时只命中 LCU 本地缓存（~20 场），beginIndex 可触发服务端拉取（~200 场）
+ * 因此两者都试，取结果更多的一方。
  */
 async function fetchMatchPage(
   client: LcuHttpClient,
@@ -274,38 +275,53 @@ async function fetchMatchPage(
   beg: number,
   end: number,
 ): Promise<{ meta: any; games: any[] }> {
-  let page: any
-  let games: any[] = []
+  let bestMeta: any = {}
+  let bestGames: any[] = []
 
+  // 尝试 begIndex（国服缩写参数）
   try {
-    page = await client.getMatchHistory(puuid, beg, end)
-    games = page?.games?.games || []
+    const page = await client.getMatchHistory(puuid, beg, end)
+    const games: any[] = page?.games?.games || []
+    if (games.length > bestGames.length) {
+      bestMeta = page?.games || {}
+      bestGames = games
+    }
   } catch (err: any) {
     const isServerError = /status code 5\d\d/.test(err.message || '')
     if (isServerError) {
-      // LCU 内部服务未就绪，等待 3s 后重试，不用 beginIndex 降级
       console.warn(`[LCU:MAIN] begIndex 请求失败 (${err.message || err}), 等待 3 秒后重试...`)
       await new Promise(resolve => setTimeout(resolve, 3000))
       try {
-        page = await client.getMatchHistory(puuid, beg, end)
-        games = page?.games?.games || []
+        const page = await client.getMatchHistory(puuid, beg, end)
+        const games: any[] = page?.games?.games || []
+        if (games.length > bestGames.length) {
+          bestMeta = page?.games || {}
+          bestGames = games
+        }
         console.log(`[LCU:MAIN] begIndex 重试成功: ${games.length} 场`)
       } catch (retryErr: any) {
-        console.warn(`[LCU:MAIN] begIndex 重试失败 (${retryErr.message || retryErr}), 尝试 beginIndex 降级`)
+        console.warn(`[LCU:MAIN] begIndex 重试失败 (${retryErr.message || retryErr})`)
       }
     } else {
-      console.warn(`[LCU:MAIN] begIndex 请求失败 (${err.message || err}), 尝试 beginIndex 降级`)
+      console.warn(`[LCU:MAIN] begIndex 请求失败 (${err.message || err})`)
     }
   }
 
-  if (games.length === 0) {
-    page = await client.getMatchHistoryAlt(puuid, beg, end)
-    games = page?.games?.games || []
-    if (games.length > 0) {
-      console.log(`[LCU:MAIN] beginIndex 降级兼容: beg=${beg} end=${end} → ${games.length} 场`)
+  // 同时尝试 beginIndex（完整拼写），可能触发服务端拉取更多对局
+  const begCount = bestGames.length
+  try {
+    const altPage = await client.getMatchHistoryAlt(puuid, beg, end)
+    const altGames: any[] = altPage?.games?.games || []
+    if (altGames.length > begCount) {
+      bestMeta = altPage?.games || {}
+      bestGames = altGames
+      console.log(`[LCU:MAIN] beginIndex 返回更多: ${altGames.length} 场 vs begIndex ${begCount} 场`)
     }
+  } catch (altErr: any) {
+    console.warn(`[LCU:MAIN] beginIndex 请求失败 (${altErr.message || altErr})`)
   }
-  return { meta: page?.games || {}, games }
+
+  return { meta: bestMeta, games: bestGames }
 }
 
 /**

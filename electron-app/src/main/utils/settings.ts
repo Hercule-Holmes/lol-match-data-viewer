@@ -10,6 +10,7 @@ const SETTINGS_FILE = 'settings.json'
 
 interface UserSettings {
   autoUpdate: boolean
+  deepseekApiKey?: string
 }
 
 let _cache: UserSettings | null = null

@@ -20,6 +20,24 @@
 
       <n-divider />
 
+      <!-- DeepSeek API Key -->
+      <div class="setting-row">
+        <div class="setting-label">
+          <span class="setting-title">DeepSeek API Key</span>
+          <span class="setting-desc">可选，留空则使用默认 Key</span>
+        </div>
+        <n-input
+          type="password"
+          placeholder="sk-..."
+          :value="apiKey"
+          style="width: 200px"
+          size="small"
+          @update:value="onApiKeyChange"
+        />
+      </div>
+
+      <n-divider />
+
       <!-- 打开日志目录 -->
       <div class="setting-row">
         <div class="setting-label">
@@ -67,7 +85,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { NModal, NSwitch, NButton, NDivider, NA, useMessage } from 'naive-ui'
+import { NModal, NSwitch, NButton, NDivider, NA, NInput, useMessage } from 'naive-ui'
 import pkg from '../../../../../package.json'
 
 const props = defineProps<{
@@ -81,6 +99,7 @@ const emit = defineEmits<{
 const message = useMessage()
 const appVersion = pkg.version
 const autoUpdate = ref(true)
+const apiKey = ref('')
 
 // 每次对话框打开时重新加载设置
 watch(() => props.show, async (visible) => {
@@ -88,6 +107,7 @@ watch(() => props.show, async (visible) => {
   try {
     const settings = await window.lcuApi.getSettings()
     autoUpdate.value = settings.autoUpdate !== false
+    apiKey.value = settings.deepseekApiKey || ''
   } catch {
     // 使用默认值
   }
@@ -107,6 +127,15 @@ async function onAutoUpdateToggle(val: boolean) {
   } catch (e: any) {
     message.error(`保存设置失败: ${e.message || e}`)
     autoUpdate.value = !val
+  }
+}
+
+async function onApiKeyChange(val: string) {
+  apiKey.value = val
+  try {
+    await window.lcuApi.setSetting('deepseekApiKey', val || undefined)
+  } catch (e: any) {
+    message.error(`保存 API Key 失败: ${e.message || e}`)
   }
 }
 

@@ -395,6 +395,10 @@
               </div>
             </div>
             </template>
+
+            <!-- ═══ AI 对话 ═══ -->
+            <ChatPanel :games="analysisGames" />
+
           </template>
         </div>
       </div>
@@ -423,6 +427,7 @@ import type { GameRecord, PlayerStats, AnalysisResult, PlayerAnalysis } from '@s
 import LcuImage from '@/components/widgets/LcuImage.vue'
 import ItemDisplay from '@/components/widgets/ItemDisplay.vue'
 import AugmentDisplay from '@/components/widgets/AugmentDisplay.vue'
+import ChatPanel from '@/components/chat/ChatPanel.vue'
 import { isBuildItem, getRoleName } from '@shared/utils/mappings'
 import { getModeAnalysisConfig, type MetricDef } from '@shared/utils/mode-analysis-config'
 import { useGameDataStore } from '@/stores/game-data'

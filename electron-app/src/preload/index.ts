@@ -98,6 +98,11 @@ const api = {
   openExternal(url: string): Promise<void> {
     return ipcRenderer.invoke('shell:open-external', url)
   },
+
+  /** AI 对话（DeepSeek API） */
+  chatWithAI(messages: Array<{ role: string; content: string }>): Promise<{ status: string; content?: string; message?: string }> {
+    return ipcRenderer.invoke('llm:chat', messages)
+  },
 }
 
 contextBridge.exposeInMainWorld('lcuApi', api)
