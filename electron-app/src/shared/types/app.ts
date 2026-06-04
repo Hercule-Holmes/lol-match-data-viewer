@@ -24,29 +24,6 @@ export interface SummonerInfo {
   profileIconId: number
 }
 
-/** LCU /lol-summoner/v1/summoners/{id} 原始响应 */
-export interface LcuSummoner {
-  accountId: number
-  displayName: string
-  gameName: string
-  tagLine: string
-  internalName: string
-  nameChangeFlag: boolean
-  percentCompleteForNextLevel: number
-  profileIconId: number
-  puuid: string
-  rerollPoints: {
-    currentPoints: number
-    numberOfRolls: number
-    pointsCostToRoll: number
-    pointsToReroll: number
-  }
-  summonerId: number
-  summonerLevel: number
-  xpSinceLastLevel: number
-  xpUntilNextLevel: number
-}
-
 /** @deprecated 请使用 `getPlayerDisplayName` from @shared/utils/mappings */
 export function summonerDisplayName(s: { displayName?: string; gameName?: string; tagLine?: string }): string {
   if (s.gameName) return s.tagLine ? `${s.gameName}#${s.tagLine}` : s.gameName

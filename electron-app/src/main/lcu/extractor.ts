@@ -2,9 +2,8 @@
  * LCU 数据提取与转换函数
  * 将 LCU 原始 JSON 转为 App 层类型，处理字段缺失和类型转换
  */
-import { findLolClient, LcuHttpClient } from './client'
+import { LcuHttpClient } from './client'
 import type {
-  LcuConnectionInfo,
   PlayerStats,
   PlayerData,
   TeamData,
@@ -484,9 +483,6 @@ export async function fetchMatchList(
   _page: number = 1,
   _pageSize: number = 20
 ): Promise<MatchListData> {
-  const conn = await findLolClient()
-  if (!conn) throw new Error('未找到运行中的 LOL 客户端')
-
   const summoner = await client.getCurrentSummoner()
   const puuid = summoner.puuid
 
@@ -505,8 +501,8 @@ export async function fetchMatchList(
     puuid,
     name: summoner.displayName || '',
     level: summoner.summonerLevel || 0,
-    region: conn.region,
-    platform: conn.rsoPlatformId,
+    region: client.region,
+    platform: client.rsoPlatformId,
     profileIconId: (summoner as any).profileIconId || 0,
   }
 
@@ -646,9 +642,6 @@ export async function fetchMatchListForPlayer(
   _page: number = 1,
   _pageSize: number = 20
 ): Promise<MatchListData> {
-  const conn = await findLolClient()
-  if (!conn) throw new Error('未找到运行中的 LOL 客户端')
-
   const [ranked, { summaries, totalGames }] = await Promise.all([
     client.getRankedStats(targetPuuid),
     fetchAllSummaries(client, targetPuuid),
@@ -665,8 +658,8 @@ export async function fetchMatchListForPlayer(
     puuid: targetPuuid,
     name: summonerName,
     level: summonerLevel,
-    region: conn.region,
-    platform: conn.rsoPlatformId,
+    region: client.region,
+    platform: client.rsoPlatformId,
     profileIconId,
   }
 
@@ -843,10 +836,7 @@ export async function fetchGameData(client: LcuHttpClient): Promise<GameDataCach
 export async function fetchAllMatchData(
   client: LcuHttpClient,
   gameCount: number
-): Promise<{ matchData: MatchData; connInfo: LcuConnectionInfo | null }> {
-  const conn = await findLolClient()
-  if (!conn) throw new Error('未找到运行中的 LOL 客户端')
-
+): Promise<MatchData> {
   const summoner = await client.getCurrentSummoner()
   const puuid = summoner.puuid
 
@@ -918,13 +908,13 @@ export async function fetchAllMatchData(
     })
   }
 
-  const matchData: MatchData = {
+  return {
     summoner: {
       puuid,
       name: summoner.displayName || '',
       level: summoner.summonerLevel || 0,
-      region: conn.region,
-      platform: conn.rsoPlatformId,
+      region: client.region,
+      platform: client.rsoPlatformId,
       profileIconId: (summoner as any).profileIconId || 0,
     },
     ranked: extractRankedData(ranked),
@@ -932,6 +922,4 @@ export async function fetchAllMatchData(
     games_count: allGames.length,
     games: allGames,
   }
-
-  return { matchData, connInfo: conn }
 }

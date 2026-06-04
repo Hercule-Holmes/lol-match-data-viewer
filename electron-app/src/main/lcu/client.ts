@@ -309,13 +309,12 @@ const RETRY_DELAY = 1000
 export class LcuHttpClient {
   private axios: AxiosInstance
   private baseUrl: string
-  /** 创建此客户端时使用的连接信息，供 ECONNREFUSED 时诊断 */
-  private _connSnapshot: { port: number; pid: number; authToken: string }
+  private _conn: LcuConnectionInfo
 
   constructor(conn: LcuConnectionInfo) {
+    this._conn = conn
     this.baseUrl = `https://127.0.0.1:${conn.port}`
     const auth = Buffer.from(`riot:${conn.authToken}`).toString('base64')
-    this._connSnapshot = { port: conn.port, pid: conn.pid, authToken: conn.authToken }
 
     this.axios = axios.create({
       baseURL: this.baseUrl,
@@ -327,6 +326,9 @@ export class LcuHttpClient {
       timeout: LCU_HTTP_TIMEOUT,
     })
   }
+
+  get region(): string { return this._conn.region }
+  get rsoPlatformId(): string { return this._conn.rsoPlatformId }
 
   async get<T = any>(endpoint: string): Promise<T> {
     let lastErr: any
@@ -345,12 +347,12 @@ export class LcuHttpClient {
 
           // ECONNREFUSED 专属诊断
           if (code === 'ECONNREFUSED') {
-            const s = this._connSnapshot
-            const pidAlive = s.pid ? isPidAlive(s.pid) : 'unknown'
+            const c = this._conn
+            const pidAlive = c.pid ? isPidAlive(c.pid) : 'unknown'
             console.error(
               `[LCU:MAIN] LCU API ECONNREFUSED: ${endpoint} | ` +
-              `port=${s.port} pid=${s.pid} pidAlive=${pidAlive} ` +
-              `token=${maskToken(s.authToken)} attempt=${attempt + 1}/${MAX_RETRIES + 1}`
+              `port=${c.port} pid=${c.pid} pidAlive=${pidAlive} ` +
+              `token=${maskToken(c.authToken)} attempt=${attempt + 1}/${MAX_RETRIES + 1}`
             )
           } else {
             console.error(`[LCU:MAIN] LCU API 请求失败 [${status || code}] ${endpoint}: ${err.message || err}${detail}`)

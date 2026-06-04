@@ -223,6 +223,29 @@ export interface Player {
 // LCU CDN 游戏数据静态资源类型
 // ═══════════════════════════════════════════════════════════
 
+/** LCU /lol-summoner/v1/summoners/{id} 原始响应 */
+export interface LcuSummoner {
+  accountId: number
+  displayName: string
+  gameName: string
+  tagLine: string
+  internalName: string
+  nameChangeFlag: boolean
+  percentCompleteForNextLevel: number
+  profileIconId: number
+  puuid: string
+  rerollPoints: {
+    currentPoints: number
+    numberOfRolls: number
+    pointsCostToRoll: number
+    pointsToReroll: number
+  }
+  summonerId: number
+  summonerLevel: number
+  xpSinceLastLevel: number
+  xpUntilNextLevel: number
+}
+
 export interface LcuChampionSummary {
   id: number
   name: string
