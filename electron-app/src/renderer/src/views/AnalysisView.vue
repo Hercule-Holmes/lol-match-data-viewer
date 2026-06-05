@@ -454,7 +454,6 @@ import { shortName } from '@/utils/display'
 import { formatCompactNumber as fmtNum } from '@shared/utils/mappings'
 import type {
   PodiumEntry,
-  PlayerFullAgg,
   MetricRankEntry,
   PlayerFavItem,
   PlayerChampionPool,
@@ -463,6 +462,7 @@ import type {
   GlobalAugmentFreq,
   PlayerFavAug,
 } from '@domain/analysis/types'
+import { buildPlayerAggMap, computeMetricRanking, computePodium } from '@domain/analysis/aggregation'
 
 const router = useRouter()
 const message = useMessage()
@@ -560,59 +560,12 @@ const selectedCategory = computed(() =>
 )
 
 
-function buildPlayerAggMap(games: GameRecord[]): Map<string, PlayerFullAgg> {
-  const map = new Map<string, PlayerFullAgg>()
-  for (const g of games) {
-    for (const p of [...g.blue_team.players, ...g.red_team.players]) {
-      const name = p.summoner_name
-      if (!map.has(name)) {
-        map.set(name, { profileIconId: p.profile_icon_id, gameCount: 0, winCount: 0, totalKills: 0, totalDeaths: 0, totalAssists: 0 })
-      }
-      const agg = map.get(name)!
-      agg.gameCount++
-      if (p.stats.win) agg.winCount++
-      agg.totalKills += p.stats.kills
-      agg.totalDeaths += p.stats.deaths
-      agg.totalAssists += p.stats.assists
-    }
-  }
-  return map
-}
-
 
 /** 当前选中指标的玩家排名（按总计降序） */
 const metricRanking = computed<MetricRankEntry[]>(() => {
   const games = analysisGames.value
   if (!games || !selectedCategory.value) return []
-
-  const getter = selectedCategory.value.getter
-  const playerMap = new Map<string, { total: number; count: number; profileIconId: number; winCount: number }>()
-
-  for (const g of games) {
-    for (const p of [...g.blue_team.players, ...g.red_team.players]) {
-      const name = p.summoner_name
-      const val = getter(p.stats)
-      if (!playerMap.has(name)) {
-        playerMap.set(name, { total: 0, count: 0, profileIconId: p.profile_icon_id, winCount: 0 })
-      }
-      const entry = playerMap.get(name)!
-      entry.total += val
-      entry.count++
-      if (p.stats.win) entry.winCount++
-    }
-  }
-
-  return Array.from(playerMap.entries())
-    .map(([name, e]) => ({
-      playerName: name,
-      profileIconId: e.profileIconId,
-      total: e.total,
-      average: e.total / e.count,
-      gameCount: e.count,
-      winCount: e.winCount,
-      winRate: (e.winCount / e.count) * 100,
-    }))
-    .sort((a, b) => b.total - a.total)
+  return computeMetricRanking(games, selectedCategory.value.getter)
 })
 
 /** 基础指标最大值（用于横条可视化） */
@@ -807,46 +760,9 @@ const tableMaxHeight = computed(() => {
 const metricPodium = computed<PodiumEntry[]>(() => {
   const games = analysisGames.value
   if (!games || !selectedCategory.value) return []
-
-  const aggMap = buildPlayerAggMap(games)
   const cat = selectedCategory.value
-
-  const playerAgg = new Map<string, { total: number; count: number }>()
-  for (const g of games) {
-    for (const p of [...g.blue_team.players, ...g.red_team.players]) {
-      const name = p.summoner_name
-      const val = cat.getter(p.stats)
-      if (!playerAgg.has(name)) {
-        playerAgg.set(name, { total: 0, count: 0 })
-      }
-      const entry = playerAgg.get(name)!
-      entry.total += val
-      entry.count++
-    }
-  }
-
-  return Array.from(playerAgg.entries())
-    .map(([name, agg]) => {
-      const full = aggMap.get(name)!
-      const kda = full.totalDeaths > 0
-        ? ((full.totalKills + full.totalAssists) / full.totalDeaths).toFixed(2)
-        : (full.totalKills + full.totalAssists).toFixed(1)
-      const fmt = cat.fmt
-      return {
-        playerName: name,
-        profileIconId: full.profileIconId,
-        totalValue: agg.total,
-        displayValue: fmt(agg.total),
-        gameCount: full.gameCount,
-        winCount: full.winCount,
-        totalKills: full.totalKills,
-        totalDeaths: full.totalDeaths,
-        totalAssists: full.totalAssists,
-        avgKda: kda,
-      }
-    })
-    .sort((a, b) => b.totalValue - a.totalValue)
-    .slice(0, 3)
+  const aggMap = buildPlayerAggMap(games)
+  return computePodium(games, aggMap, cat.getter, cat.fmt)
 })
 
 function podiumWinRate(e: PodiumEntry): string {
