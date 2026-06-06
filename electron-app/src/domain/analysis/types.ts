@@ -123,14 +123,38 @@ export interface PlayerFavAug {
 // 好友分析
 // ═══════════════════════════════════════════════════════════
 
+/** 好友统计数据（由 analyzeFriends 产出） */
+export interface FriendStats {
+  puuid: string
+  name: string
+  profileIconId: number
+  gamesTogether: number
+  winsTogether: number
+  winRate: number
+  soloWinRate: number
+  lastPlayedTime: number
+  gameIds: number[]
+  collectorGames: number
+  heartsteelGames: number
+}
+
+/** 好友概览摘要（由 computeFriendSummary 产出） */
+export interface FriendSummary {
+  totalFriends: number
+  mostPlayed: { name: string; count: number } | null
+  bestWinRate: { name: string; rate: number } | null
+  totalGames: number
+  bestCollector: { name: string; ratio: number; games: number } | null
+  bestHeartsteel: { name: string; ratio: number; games: number } | null
+}
+
 /** 好友指标定义（与 MetricDef 不同，增加了 minGames 门槛） */
 export interface FriendMetricDef {
   key: string
   label: string
   colorClass: string
-  getter: (f: import('@shared/utils/friend-analysis').FriendStats) => number
+  getter: (f: FriendStats) => number
   fmt: (v: number) => string
-  /** 该指标要求的最低一起场次（胜率类指标需更多样本） */
   minGames: number
 }
 

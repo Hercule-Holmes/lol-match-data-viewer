@@ -228,7 +228,7 @@ function openPlayerTab(p: ParticipantBrief) {
   if (Date.now() - _lastOpenTabTime < 500) return
   _lastOpenTabTime = Date.now()
   if (!p.puuid) return
-  const name = p.gameName ? (p.tagLine ? `${p.gameName}#${p.tagLine}` : p.gameName) : p.summonerName
+  const name = getPlayerDisplayName(p)
   if (!name) return
   tabStore.openTab(p.puuid, name, p.profileIconId, 0)
 }

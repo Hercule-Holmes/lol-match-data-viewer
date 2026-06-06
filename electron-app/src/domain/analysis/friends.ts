@@ -3,8 +3,120 @@
  * 纯计算，不依赖 Vue/Electron，可直接单元测试
  */
 
-import type { FriendStats } from '@shared/utils/friend-analysis'
-import type { FriendMetricDef, FriendPodiumEntry } from '@domain/analysis/types'
+import type { GameSummary, ParticipantBrief } from '@shared/types'
+import { getPlayerDisplayName } from '@shared/utils/mappings'
+import type { FriendMetricDef, FriendPodiumEntry, FriendStats, FriendSummary } from '@domain/analysis/types'
+
+// ═══════════════════════════════════════════════════════════
+// 核心分析函数
+// ═══════════════════════════════════════════════════════════
+
+const COLLECTOR_ID = 6676
+const HEARTSTEEL_ID = 3084
+
+/** 从 GameSummary 列表中分析所有队友频次与胜率 */
+export function analyzeFriends(games: GameSummary[], targetPuuid: string): FriendStats[] {
+  const map = new Map<string, FriendStats>()
+
+  const validGames = games.filter((g) => g.gameMode !== 'PRACTICETOOL')
+  if (validGames.length === 0) return []
+
+  let totalWins = 0
+
+  for (const g of validGames) {
+    if (g.win) totalWins++
+
+    const teammates =
+      g.teamId === 100 ? g.blueParticipants : g.redParticipants
+
+    for (const p of teammates) {
+      if (p.puuid === targetPuuid) continue
+
+      const hasCollector = p.items.includes(COLLECTOR_ID)
+      const hasHeartsteel = p.items.includes(HEARTSTEEL_ID)
+
+      const existing = map.get(p.puuid)
+      if (existing) {
+        existing.gamesTogether++
+        if (g.win) existing.winsTogether++
+        if (hasCollector) existing.collectorGames++
+        if (hasHeartsteel) existing.heartsteelGames++
+        if (g.gameCreation > existing.lastPlayedTime) {
+          existing.lastPlayedTime = g.gameCreation
+        }
+        existing.gameIds.push(g.gameId)
+      } else {
+        map.set(p.puuid, {
+          puuid: p.puuid,
+          name: getPlayerDisplayName(p),
+          profileIconId: p.profileIconId,
+          gamesTogether: 1,
+          winsTogether: g.win ? 1 : 0,
+          winRate: 0,
+          soloWinRate: 0,
+          lastPlayedTime: g.gameCreation,
+          gameIds: [g.gameId],
+          collectorGames: hasCollector ? 1 : 0,
+          heartsteelGames: hasHeartsteel ? 1 : 0,
+        })
+      }
+    }
+  }
+
+  const totalGames = validGames.length
+
+  for (const f of map.values()) {
+    f.winRate = f.gamesTogether > 0 ? f.winsTogether / f.gamesTogether : 0
+    const soloTotal = totalGames - f.gamesTogether
+    const soloWins = totalWins - f.winsTogether
+    f.soloWinRate = soloTotal > 0 ? soloWins / soloTotal : 0
+  }
+
+  return Array.from(map.values())
+    .filter((f) => f.gamesTogether >= 3)
+    .sort((a, b) => b.gamesTogether - a.gamesTogether)
+}
+
+/** 从好友统计数据中计算概览摘要 */
+export function computeFriendSummary(friends: FriendStats[], totalGames: number): FriendSummary {
+  if (friends.length === 0) {
+    return { totalFriends: 0, mostPlayed: null, bestWinRate: null, totalGames, bestCollector: null, bestHeartsteel: null }
+  }
+
+  const mostPlayed = friends[0]
+  const bestWR = friends.reduce((best, f) =>
+    f.winRate > best.winRate && f.gamesTogether >= 5 ? f : best,
+  friends[0])
+
+  const bestCollector = friends
+    .filter((f) => f.collectorGames > 0 && f.gamesTogether >= 3)
+    .reduce((best, f) => f.collectorGames / f.gamesTogether > best.collectorGames / best.gamesTogether ? f : best,
+    friends.filter((f) => f.collectorGames > 0 && f.gamesTogether >= 3)[0] || null)
+
+  const bestHeartsteel = friends
+    .filter((f) => f.heartsteelGames > 0 && f.gamesTogether >= 3)
+    .reduce((best, f) => f.heartsteelGames / f.gamesTogether > best.heartsteelGames / best.gamesTogether ? f : best,
+    friends.filter((f) => f.heartsteelGames > 0 && f.gamesTogether >= 3)[0] || null)
+
+  return {
+    totalFriends: friends.length,
+    mostPlayed: { name: mostPlayed.name, count: mostPlayed.gamesTogether },
+    bestWinRate: bestWR.winRate > 0
+      ? { name: bestWR.name, rate: bestWR.winRate }
+      : null,
+    totalGames,
+    bestCollector: bestCollector
+      ? { name: bestCollector.name, ratio: bestCollector.collectorGames / bestCollector.gamesTogether, games: bestCollector.collectorGames }
+      : null,
+    bestHeartsteel: bestHeartsteel
+      ? { name: bestHeartsteel.name, ratio: bestHeartsteel.heartsteelGames / bestHeartsteel.gamesTogether, games: bestHeartsteel.heartsteelGames }
+      : null,
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// 展示层辅助（排序、领奖台、称号）
+// ═══════════════════════════════════════════════════════════
 
 /** 好友指标定义 */
 export const FRIEND_METRICS: FriendMetricDef[] = [

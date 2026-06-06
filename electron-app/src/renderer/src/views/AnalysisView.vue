@@ -249,8 +249,8 @@
                       <span class="champ-name-main">{{ gds.champions[p.mostPlayedChampionId]?.name || '英雄#' + p.mostPlayedChampionId }}</span>
                       <span class="champ-meta">
                         {{ p.mostPlayedChampionCount }}/{{ p.totalGames }}局 ·
-                        选取率{{ (p.mostPlayedChampionCount / p.totalGames * 100).toFixed(0) }}%
-                        · 胜率<span :class="p.favChampWins / p.mostPlayedChampionCount >= 0.5 ? 'win-green' : 'win-red'">{{ (p.favChampWins / p.mostPlayedChampionCount * 100).toFixed(0) }}%</span>
+                        选取率{{ rateDisplay(p.mostPlayedChampionCount / p.totalGames) }}
+                        · 胜率<span :class="p.favChampWins / p.mostPlayedChampionCount >= 0.5 ? 'win-green' : 'win-red'">{{ rateDisplay(p.favChampWins / p.mostPlayedChampionCount) }}</span>
                       </span>
                     </div>
                     <div class="champ-pool-badge">
@@ -303,7 +303,7 @@
                         <span class="rt-name">{{ shortName(row.playerName) }}</span>
                       </span>
                       <span class="rt-bar-track">
-                        <span class="rt-bar-fill" :style="{ width: (row.total / maxAdvMetricValue * 100).toFixed(1) + '%' }"></span>
+                        <span class="rt-bar-fill" :style="{ width: barPercent(row.total, maxAdvMetricValue) }"></span>
                         <span class="rt-bar-val">{{ selectedCategory?.fmt(row.total) || '—' }}</span>
                       </span>
                       <span v-for="r in (row.raw || [])" :key="r.label" class="rt-raw-tag"><b>{{ fmtNum(r.value) }}</b> {{ r.label }}</span>
@@ -405,7 +405,7 @@
                       <span class="rt-name">{{ shortName(row.playerName) }}</span>
                     </span>
                     <span class="rt-bar-track">
-                      <span class="rt-bar-fill" :style="{ width: (row.total / maxMetricValue.total * 100).toFixed(1) + '%' }"></span>
+                      <span class="rt-bar-fill" :style="{ width: barPercent(row.total, maxMetricValue.total) }"></span>
                       <span class="rt-bar-val">{{ selectedCategory?.fmt(row.total) || '—' }}</span>
                     </span>
                   </div>
@@ -452,6 +452,7 @@ import { getModeAnalysisConfig, type MetricDef } from '@shared/utils/mode-analys
 import { useGameDataStore } from '@/stores/game-data'
 import { shortName } from '@/utils/display'
 import { championIcon as championIconUrl, profileIcon as profileIconUrl } from '@/utils/lcu-images'
+import { rateDisplay } from '@/utils/format'
 import { formatCompactNumber as fmtNum } from '@shared/utils/mappings'
 import type {
   PodiumEntry,
@@ -463,7 +464,11 @@ import type {
   GlobalAugmentFreq,
   PlayerFavAug,
 } from '@domain/analysis/types'
-import { buildPlayerAggMap, computeMetricRanking, computePodium, computePodiumWinRate as podiumWinRate, computePlayerAnalysis } from '@domain/analysis/aggregation'
+import { buildPlayerAggMap, computeMetricRanking, computePodium, computePodiumWinRate as podiumWinRate } from '@domain/analysis/aggregation'
+import { isPlayerInAllGames, filterToPlayerTeam } from '@domain/analysis/match-stats'
+import { analyzeSelectedGames } from '@application/analysis-service'
+import { initializeSession } from '@application/connection-service'
+import { createMatchRepository } from '@application/ports'
 import { computeAdvancedMetricRanking } from '@domain/analysis/advanced-metrics'
 import {
   computeGlobalChampionFreq,
@@ -493,13 +498,9 @@ const currentPuuid = ref('')
 const onlyTeammates = ref(false)
 
 /** 检查是否所有分析对局都包含当前登录玩家（否则无法使用只看队友） */
-const canFilterTeammates = computed(() => {
-  if (!currentPuuid.value || _allGames.value.length === 0) return false
-  return _allGames.value.every(g =>
-    g.blue_team.players.some(p => p.puuid === currentPuuid.value) ||
-    g.red_team.players.some(p => p.puuid === currentPuuid.value)
-  )
-})
+const canFilterTeammates = computed(() =>
+  isPlayerInAllGames(_allGames.value, currentPuuid.value),
+)
 
 /** 禁止切换的原因文本 */
 const disableTeammatesReason = computed(() => {
@@ -511,17 +512,7 @@ const disableTeammatesReason = computed(() => {
 /** 响应式对局数据：根据只看队友开关自动过滤，供所有 computed 属性依赖追踪 */
 const analysisGames = computed<GameRecord[]>(() => {
   if (!onlyTeammates.value || !currentPuuid.value || !canFilterTeammates.value) return _allGames.value
-  return _allGames.value.map(g => {
-    const onBlue = g.blue_team.players.some(p => p.puuid === currentPuuid.value)
-    const onRed = g.red_team.players.some(p => p.puuid === currentPuuid.value)
-    if (onBlue) {
-      return { ...g, red_team: { ...g.red_team, players: [] } }
-    }
-    if (onRed) {
-      return { ...g, blue_team: { ...g.blue_team, players: [] } }
-    }
-    return g
-  })
+  return filterToPlayerTeam(_allGames.value, currentPuuid.value)
 })
 
 /** 当前选中的指标 key */
@@ -558,6 +549,11 @@ const advancedMetrics = computed<MetricDef[]>(() => {
 /** 判断是否为高阶指标 */
 function isAdvancedMetric(key: string | null): boolean {
   return advancedMetrics.value.some((c) => c.key === key)
+}
+
+/** 排名条宽度百分比（保留一位小数） */
+function barPercent(value: number, max: number): string {
+  return max > 0 ? (value / max * 100).toFixed(1) + '%' : '0%'
 }
 
 const selectedCategory = computed(() =>
@@ -738,7 +734,6 @@ function getItemUsers(itemId: number): { playerName: string; count: number }[] {
 
 /** 加载分析数据 */
 async function loadAnalysis() {
-  // 仅"选择对局 + 点击分析按钮"触发计算；侧边栏导航只展示已有结果
   const shouldRecalculate = sessionStorage.getItem('analysisShouldRecalculate') === 'true'
   sessionStorage.removeItem('analysisShouldRecalculate')
   if (!shouldRecalculate) return
@@ -753,33 +748,17 @@ async function loadAnalysis() {
   selectedMetric.value = null
   loading.value = true
   try {
-    const games = await window.lcuApi.fetchGameDetails(gameIds)
-    console.log(`[LCU:ANALYSIS] 对局数据拉取完成: ${games.length} 场`)
+    const report = await analyzeSelectedGames(createMatchRepository(window.lcuApi), gameIds)
+    console.log(`[LCU:ANALYSIS] 对局数据拉取完成: ${report.games.length} 场`)
 
-    // 检测游戏模式
-    const modes = new Set(games.map(g => g.game_mode))
-    currentMode.value = modes.size === 1 ? [...modes][0] : ''
-    if (currentMode.value) {
-      const cfg = getModeAnalysisConfig(currentMode.value)
-      console.log(`[LCU:ANALYSIS] 检测到模式: ${cfg.displayName} (${currentMode.value})`)
+    currentMode.value = report.currentMode
+    if (report.currentMode) {
+      const cfg = getModeAnalysisConfig(report.currentMode)
+      console.log(`[LCU:ANALYSIS] 检测到模式: ${cfg.displayName} (${report.currentMode})`)
     }
 
-    const players = computePlayerAnalysis(games)
-
-    const winCount = games.filter(
-      (g) => g.blue_team.win || g.red_team.win
-    ).length
-
-    result.value = {
-      selectedGameIds: gameIds,
-      gameCount: games.length,
-      winCount,
-      winRate: (winCount / games.length) * 100,
-      loseCount: games.length - winCount,
-      players,
-    }
-
-    _allGames.value = games
+    result.value = report.result
+    _allGames.value = report.games
   } catch (e: any) {
     message.error(`分析失败: ${e.message || e}`)
   } finally {
@@ -797,11 +776,9 @@ function rankClass(idx: number): string {
 
 onActivated(async () => {
   // 获取当前登录玩家的 PUUID（用于只看队友过滤）
-  if (!currentPuuid.value && typeof window.lcuApi !== 'undefined') {
-    try {
-      const s = await window.lcuApi.getCurrentSummoner()
-      currentPuuid.value = s.puuid
-    } catch { /* 获取失败则只看队友始终禁用 */ }
+  if (!currentPuuid.value) {
+    const { summoner } = await initializeSession(window.lcuApi)
+    if (summoner) currentPuuid.value = summoner.puuid
   }
   await loadAnalysis()
 })

@@ -52,7 +52,7 @@
             <span class="stat-label">与 {{ shortName(summary.mostPlayed.name, 10) }} 最多</span>
           </div>
           <div class="stat-badge" v-if="summary.bestWinRate">
-            <span class="stat-num win">{{ (summary.bestWinRate.rate * 100).toFixed(0) }}%</span>
+            <span class="stat-num win">{{ rateDisplay(summary.bestWinRate.rate) }}</span>
             <span class="stat-label">{{ shortName(summary.bestWinRate.name, 10) }} 胜率</span>
           </div>
         </div>
@@ -228,17 +228,14 @@ import {
   TrophyOutline,
 } from '@vicons/ionicons5'
 import type { MatchListData } from '@shared/types'
-import {
-  analyzeFriends,
-  computeFriendSummary,
-  type FriendStats,
-  type FriendSummary,
-} from '@shared/utils/friend-analysis'
 import LcuImage from '@/components/widgets/LcuImage.vue'
-import type { FriendPodiumEntry } from '@domain/analysis/types'
-import { FRIEND_METRICS, computeSortedByMetric, computeFriendPodium, getFirstPlaceTitle } from '@domain/analysis/friends'
+import type { FriendPodiumEntry, FriendStats, FriendSummary } from '@domain/analysis/types'
+import { analyzeFriends, computeFriendSummary, FRIEND_METRICS, computeSortedByMetric, computeFriendPodium, getFirstPlaceTitle } from '@domain/analysis/friends'
+import { loadFriendAnalysis } from '@application/friend-service'
+import { createMatchRepository } from '@application/ports'
 import { shortName } from '@/utils/display'
 import { profileIcon as profileIconUrl } from '@/utils/lcu-images'
+import { daysAgo, rateDisplay } from '@/utils/format'
 import { useThemeStore } from '@/stores/theme'
 
 const themeStore = useThemeStore()
@@ -426,28 +423,14 @@ const friendColumns = computed(() => {
   return cols
 })
 
-function daysAgo(ts: number): string {
-  const diff = Date.now() - ts
-  const days = Math.floor(diff / 86400000)
-  if (days === 0) return '今天'
-  if (days === 1) return '昨天'
-  if (days < 7) return `${days}天前`
-  if (days < 30) return `${Math.floor(days / 7)}周前`
-  return `${Math.floor(days / 30)}月前`
-}
-
-function rateDisplay(rate: number): string {
-  return (rate * 100).toFixed(0) + '%'
-}
 
 async function loadData() {
   loading.value = true
   errorMsg.value = ''
   try {
-    const data = await window.lcuApi.fetchMatchList(1, 100)
+    const { matchData: data, participantCount } = await loadFriendAnalysis(createMatchRepository(window.lcuApi))
     matchData.value = data
-    const withP = data.games.filter(g => g.blueParticipants.length > 0 || g.redParticipants.length > 0).length
-    console.log(`[LCU:FRIEND] 好友分析加载完成: ${data.games.length} 场 (含队友 ${withP} 场), puuid=${data.summoner.puuid.slice(0, 8)}…`)
+    console.log(`[LCU:FRIEND] 好友分析加载完成: ${data.games.length} 场 (含队友 ${participantCount} 场), puuid=${data.summoner.puuid.slice(0, 8)}…`)
   } catch (e: any) {
     const msg = e.message || String(e)
     if (msg.includes('未连接') || msg.includes('not connected') || msg.includes('LCU')) {

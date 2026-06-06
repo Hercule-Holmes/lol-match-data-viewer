@@ -135,8 +135,10 @@ import { ArrowBackOutline } from '@vicons/ionicons5'
 import type { GameRecord, PlayerData, PlayerStats } from '@shared/types'
 import { useGameDataStore } from '@/stores/game-data'
 import { getGameModeName, getQueueName, getMapName } from '@shared/utils/mappings'
-import { formatGameDuration } from '@/utils/format'
+import { formatGameDuration, formatBestValue } from '@/utils/format'
 import { findBestStat, findBestPlayer } from '@domain/analysis/aggregation'
+import { loadGameDetail } from '@application/game-detail-service'
+import { createMatchRepository } from '@application/ports'
 import PlayerCard from '@/components/PlayerCard.vue'
 
 const route = useRoute()
@@ -161,8 +163,7 @@ onMounted(async () => {
   console.log(`[LCU:GAME_DETAIL] 加载对局详情: gameId=${gameId.value}`)
   loading.value = true
   try {
-    const games = await window.lcuApi.fetchGameDetails([gameId.value])
-    game.value = games[0] || null
+    game.value = await loadGameDetail(createMatchRepository(window.lcuApi), gameId.value)
     if (game.value) {
       console.log(`[LCU:GAME_DETAIL] 对局加载完成: ${game.value.game_mode} #${game.value.game_id}, ${game.value.game_duration_min}min`)
     } else {
@@ -182,66 +183,61 @@ const allPlayers = computed<PlayerData[]>(() => {
   return [...game.value.blue_team.players, ...game.value.red_team.players]
 })
 
+const BEST_FIELDS: [string, (s: PlayerStats) => number][] = [
+  ['damage_total_to_champs', s => s.damage.total_to_champs],
+  ['damage_total_taken', s => s.damage.total_taken],
+  ['survival_total_heal', s => s.survival.total_heal],
+  ['survival_damage_self_mitigated', s => s.survival.damage_self_mitigated],
+  ['survival_longest_time_living', s => s.survival.longest_time_living],
+  ['cc_total_cc_dealt', s => s.cc.total_cc_dealt],
+  ['cs_total', s => s.cs.total],
+  ['economy_gold_earned', s => s.economy.gold_earned],
+  ['vision_score', s => s.vision.score],
+  ['objectives_turret_kills', s => s.objectives.turret_kills],
+  ['kills', s => s.kills],
+  ['assists', s => s.assists],
+]
+
+const BEST_LABELS: Record<string, string> = {
+  damage_total_to_champs: '伤害最高', damage_total_taken: '承伤最高',
+  survival_total_heal: '治疗最高', survival_damage_self_mitigated: '最硬选手',
+  survival_longest_time_living: '不死战神', cc_total_cc_dealt: '控制最强',
+  cs_total: '补刀最多', economy_gold_earned: '打钱最多',
+  vision_score: '视野最高', objectives_turret_kills: '推塔最多',
+  kills: '击杀最多', assists: '助攻最多',
+}
+
+const BEST_TAG_TYPES: Record<string, string> = {
+  damage_total_to_champs: 'error', damage_total_taken: 'warning',
+  survival_total_heal: 'success', survival_damage_self_mitigated: 'info',
+  survival_longest_time_living: 'info', cc_total_cc_dealt: 'warning',
+  cs_total: 'default', economy_gold_earned: 'warning',
+  vision_score: 'info', objectives_turret_kills: 'default',
+  kills: 'error', assists: 'success',
+}
+
 /** 全场最佳指标列表（供顶部汇总 + 传入子组件高亮） */
 const bests = computed(() => {
   const all = allPlayers.value
   const b: Record<string, { player: PlayerData | null; value: number }> = {}
-  const fields: [string, (s: PlayerStats) => number, string][] = [
-    ['damage_total_to_champs', s => s.damage.total_to_champs, '伤害最高'],
-    ['damage_total_taken', s => s.damage.total_taken, '承伤最高'],
-    ['survival_total_heal', s => s.survival.total_heal, '治疗最高'],
-    ['survival_damage_self_mitigated', s => s.survival.damage_self_mitigated, '最硬选手'],
-    ['survival_longest_time_living', s => s.survival.longest_time_living, '不死战神'],
-    ['cc_total_cc_dealt', s => s.cc.total_cc_dealt, '控制最强'],
-    ['cs_total', s => s.cs.total, '补刀最多'],
-    ['economy_gold_earned', s => s.economy.gold_earned, '打钱最多'],
-    ['vision_score', s => s.vision.score, '视野最高'],
-    ['objectives_turret_kills', s => s.objectives.turret_kills, '推塔最多'],
-    ['kills', s => s.kills, '击杀最多'],
-    ['assists', s => s.assists, '助攻最多'],
-  ]
-  for (const [key, getter] of fields) {
+  for (const [key, getter] of BEST_FIELDS) {
     b[key] = { player: findBestPlayer(all, getter), value: findBestStat(all, getter) }
   }
   return b
 })
 
 const bestsList = computed(() => {
-  const labels: Record<string, string> = {
-    damage_total_to_champs: '伤害最高', damage_total_taken: '承伤最高',
-    survival_total_heal: '治疗最高', survival_damage_self_mitigated: '最硬选手',
-    survival_longest_time_living: '不死战神', cc_total_cc_dealt: '控制最强',
-    cs_total: '补刀最多', economy_gold_earned: '打钱最多',
-    vision_score: '视野最高', objectives_turret_kills: '推塔最多',
-    kills: '击杀最多', assists: '助攻最多',
-  }
-  const types: Record<string, any> = {
-    damage_total_to_champs: 'error', damage_total_taken: 'warning',
-    survival_total_heal: 'success', survival_damage_self_mitigated: 'info',
-    survival_longest_time_living: 'info', cc_total_cc_dealt: 'warning',
-    cs_total: 'default', economy_gold_earned: 'warning',
-    vision_score: 'info', objectives_turret_kills: 'default',
-    kills: 'error', assists: 'success',
-  }
   return Object.entries(bests.value)
     .filter(([_, v]) => v.value > 0)
     .map(([key, v]) => ({
       key,
-      label: labels[key] || key,
-      type: types[key] || 'default',
+      label: BEST_LABELS[key] || key,
+      type: BEST_TAG_TYPES[key] || 'default',
       player: v.player,
       value: formatBestValue(key, v.value),
     }))
 })
 
-function formatBestValue(key: string, v: number): string {
-  if (['damage_total_to_champs', 'damage_total_taken', 'survival_total_heal',
-    'survival_damage_self_mitigated', 'economy_gold_earned'].includes(key)) {
-    return v.toLocaleString()
-  }
-  if (key === 'survival_longest_time_living') return v + 's'
-  return String(v)
-}
 </script>
 
 <style scoped>

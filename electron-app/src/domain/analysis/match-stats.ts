@@ -3,7 +3,7 @@
  * 纯计算，操作 GameSummary 类型（与 aggregation/frequency 的 GameRecord 不同）
  */
 
-import type { GameSummary, ParticipantBrief } from '@shared/types'
+import type { GameRecord, GameSummary, ParticipantBrief } from '@shared/types'
 
 export interface PlayerFreq {
   puuid: string
@@ -114,4 +114,40 @@ export function formatTotalGamesDisplay(
     return `${(currentPage - 1) * pageSize + gamesLength} 场`
   }
   return `${(currentPage - 1) * pageSize + gamesLength}+ 场`
+}
+
+// ═══════════════════════════════════════════════════════════
+// 数据谓词 & 变换（供应用层/表示层使用，纯计算）
+// ═══════════════════════════════════════════════════════════
+
+/** 判断指定玩家是否参加了全部对局 */
+export function isPlayerInAllGames(
+  games: Pick<GameRecord, 'blue_team' | 'red_team'>[],
+  puuid: string,
+): boolean {
+  if (!games.length || !puuid) return false
+  return games.every((g) =>
+    g.blue_team.players.some((p) => p.puuid === puuid) ||
+    g.red_team.players.some((p) => p.puuid === puuid),
+  )
+}
+
+/** 只保留指定玩家所在方，清空对方队伍（用于"只看队友"模式） */
+export function filterToPlayerTeam(games: GameRecord[], puuid: string): GameRecord[] {
+  return games.map((g) => {
+    const onBlue = g.blue_team.players.some((p) => p.puuid === puuid)
+    const onRed = g.red_team.players.some((p) => p.puuid === puuid)
+    if (onBlue) return { ...g, red_team: { ...g.red_team, players: [] } }
+    if (onRed) return { ...g, blue_team: { ...g.blue_team, players: [] } }
+    return g
+  })
+}
+
+/** 判断对局列表是否属于同一游戏模式 */
+export function hasUniformGameMode(
+  games: Pick<GameSummary, 'gameMode'>[],
+): boolean {
+  if (games.length <= 1) return true
+  const first = games[0].gameMode
+  return games.every((g) => g.gameMode === first)
 }

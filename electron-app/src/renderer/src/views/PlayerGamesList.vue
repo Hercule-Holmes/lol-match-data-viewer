@@ -160,12 +160,15 @@ import {
 } from '@vicons/ionicons5'
 import type { MatchListData } from '@shared/types'
 import { formatGameModeLabel } from '@shared/utils/mappings'
+import { hasUniformGameMode } from '@domain/analysis/match-stats'
 import { useTabStore } from '@/stores/tab'
 import { useGameDataStore } from '@/stores/game-data'
 import MatchHistoryCard from '@/components/match-history/MatchHistoryCard.vue'
 import MatchStatsPanel from '@/components/match-history/MatchStatsPanel.vue'
 import LcuImage from '@/components/widgets/LcuImage.vue'
 import { profileIcon } from '@/utils/lcu-images'
+import { refreshPlayerGames } from '@application/match-list-service'
+import { createMatchRepository } from '@application/ports'
 
 const props = defineProps<{
   puuid: string
@@ -253,9 +256,10 @@ async function refreshData() {
   if (Date.now() - _retryCooldown < 3000) return
   loading.value = true
   try {
-    listData.value = await window.lcuApi.fetchPlayerMatchList(
+    listData.value = await refreshPlayerGames(
+      createMatchRepository(window.lcuApi),
       props.puuid, props.name, props.profileIconId, props.summonerLevel,
-      1, pageSize.value
+      pageSize.value,
     )
     currentPage.value = 1
     checkedRowKeys.value = []
@@ -360,9 +364,8 @@ function goToAnalysis() {
   if (listData.value) {
     const idSet = new Set(checkedRowKeys.value)
     const selectedGames = listData.value.games.filter(g => idSet.has(g.gameId))
-    const modes = new Set(selectedGames.map(g => g.gameMode))
-    if (modes.size > 1) {
-      const modeNames = Array.from(modes)
+    if (!hasUniformGameMode(selectedGames)) {
+      const modeNames = [...new Set(selectedGames.map(g => g.gameMode))]
         .map(m => formatGameModeLabel({ gameMode: m, queueId: 0 }, gds.queues))
       dialog.warning({
         title: '模式不一致',
