@@ -150,7 +150,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
+import { computed, inject, onMounted, onUnmounted, onDeactivated, ref, watch, type Ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   NButton, NInputNumber, NSelect, NIcon, NSpin, useMessage, useDialog,
@@ -160,9 +160,10 @@ import {
 } from '@vicons/ionicons5'
 import type { MatchListData } from '@shared/types'
 import { formatGameModeLabel } from '@shared/utils/mappings'
-import { hasUniformGameMode } from '@domain/analysis/match-stats'
+import { hasUniformGameMode } from '@application/analysis-service'
 import { useTabStore } from '@/stores/tab'
 import { useGameDataStore } from '@/stores/game-data'
+import { useAnalysisBridge } from '@/stores/analysis-bridge'
 import MatchHistoryCard from '@/components/match-history/MatchHistoryCard.vue'
 import MatchStatsPanel from '@/components/match-history/MatchStatsPanel.vue'
 import LcuImage from '@/components/widgets/LcuImage.vue'
@@ -170,7 +171,12 @@ import { profileIcon } from '@/utils/lcu-images'
 import { refreshPlayerGames } from '@application/match-list-service'
 import { createMatchRepository } from '@application/ports'
 
+function errMsg(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
 const props = defineProps<{
+  tabId: string
   puuid: string
   name: string
   profileIconId: number
@@ -182,6 +188,7 @@ const message = useMessage()
 const dialog = useDialog()
 const tabStore = useTabStore()
 const gds = useGameDataStore()
+const bridge = useAnalysisBridge()
 
 const listData = ref<MatchListData | null>(null)
 const loading = ref(false)
@@ -272,8 +279,8 @@ async function refreshData() {
       tab.summonerLevel = s.level
     }
     message.success(`${displayName.value} — ${listData.value.totalGames} 场对局`)
-  } catch (e: any) {
-    message.error(`加载失败: ${e.message || e}`)
+  } catch (e: unknown) {
+    message.error(`加载失败: ${errMsg(e)}`)
     _retryCooldown = Date.now()
   } finally {
     loading.value = false
@@ -376,8 +383,7 @@ function goToAnalysis() {
     }
   }
 
-  sessionStorage.setItem('analysisGameIds', JSON.stringify(checkedRowKeys.value))
-  sessionStorage.setItem('analysisShouldRecalculate', 'true')
+  bridge.request(checkedRowKeys.value)
   router.push({ name: 'analysis' })
 }
 
@@ -407,6 +413,12 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('mouseup', onDragEnd)
+})
+
+onDeactivated(() => {
+  if (!tabStore.tabs.some(t => t.id === props.tabId)) {
+    listData.value = null
+  }
 })
 </script>
 

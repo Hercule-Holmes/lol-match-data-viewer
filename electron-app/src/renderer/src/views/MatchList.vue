@@ -7,6 +7,7 @@
           v-for="tab in tabs"
           v-show="tab.id === activeTabId"
           :key="tab.id"
+          :tab-id="tab.id"
           :puuid="tab.puuid"
           :name="tab.name"
           :profile-icon-id="tab.profileIconId"
@@ -24,6 +25,7 @@ import { useTabStore } from '@/stores/tab'
 import { useGameDataStore } from '@/stores/game-data'
 import { summonerDisplayName } from '@shared/types'
 import { initializeSession } from '@application/connection-service'
+import { createSessionRepository } from '@application/ports'
 import TabBar from '@/components/sidebar/TabBar.vue'
 import PlayerGamesList from './PlayerGamesList.vue'
 
@@ -35,7 +37,7 @@ onMounted(async () => {
   tabStore.ensureDefaultTab()
 
   if (typeof window.lcuApi === 'undefined') return
-  const { connected, summoner } = await initializeSession(window.lcuApi)
+  const { connected, summoner } = await initializeSession(createSessionRepository(window.lcuApi))
   if (connected && summoner) {
     tabStore.updateDefaultTab(summoner.puuid, summonerDisplayName(summoner), summoner.profileIconId, summoner.summonerLevel)
     if (!gds.isLoaded) {
