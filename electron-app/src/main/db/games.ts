@@ -1,5 +1,6 @@
 import { getDbSafe, flushDb } from './database'
-import type { GameSummary, GameRecord } from '@shared/types'
+import type { GameSummary } from '@shared/types'
+import type { Game } from '@shared/types/lcu-api'
 
 export function saveGameSummaries(puuid: string, summaries: GameSummary[]): void {
   const db = getDbSafe()
@@ -57,23 +58,71 @@ export function getGameSummaryCount(puuid: string): number {
   return Number(rows[0].values[0][0])
 }
 
-export function saveGameDetail(gameId: number, detail: GameRecord): void {
+/** 持久化单场对局详情（原始 LCU JSON） */
+export function saveGameDetail(gameId: number, detail: Game): void {
   const db = getDbSafe()
   if (!db) return
-  db.run('INSERT OR REPLACE INTO game_details (game_id, detail_json) VALUES (?, ?)', [
-    gameId,
-    JSON.stringify(detail),
-  ])
-  flushDb()
+  try {
+    db.run('INSERT OR REPLACE INTO game_details (game_id, detail_json) VALUES (?, ?)', [
+      gameId,
+      JSON.stringify(detail),
+    ])
+    flushDb()
+  } catch {
+    // 写入失败静默降级——数据在内存缓存中，不影响当前显示
+  }
 }
 
-export function getGameDetail(gameId: number): GameRecord | null {
+/** 批量持久化对局详情 */
+export function saveGameDetailsBatch(entries: Array<{ gameId: number; detail: Game }>): void {
+  const db = getDbSafe()
+  if (!db || entries.length === 0) return
+  try {
+    const stmt = db.prepare('INSERT OR REPLACE INTO game_details (game_id, detail_json) VALUES (?, ?)')
+    for (const { gameId, detail } of entries) {
+      stmt.run([gameId, JSON.stringify(detail)])
+    }
+    stmt.free()
+    flushDb()
+  } catch {
+    // 写入失败静默降级
+  }
+}
+
+/** 从 DB 读取单场对局详情（原始 LCU JSON），不存在返回 null */
+export function getGameDetail(gameId: number): Game | null {
   const db = getDbSafe()
   if (!db) return null
-  const rows = db.exec('SELECT detail_json FROM game_details WHERE game_id = ?', [gameId])
-  if (!rows.length) return null
-  const json = rows[0].values[0][0] as string
-  return JSON.parse(json) as GameRecord
+  try {
+    const rows = db.exec('SELECT detail_json FROM game_details WHERE game_id = ?', [gameId])
+    if (!rows.length) return null
+    const json = rows[0].values[0][0] as string
+    return JSON.parse(json) as Game
+  } catch {
+    return null
+  }
+}
+
+/** 批量从 DB 读取对局详情，返回 gameId → detail 映射 */
+export function getGameDetailsBatch(gameIds: number[]): Map<number, Game> {
+  const result = new Map<number, Game>()
+  const db = getDbSafe()
+  if (!db || gameIds.length === 0) return result
+  try {
+    const placeholders = gameIds.map(() => '?').join(',')
+    const rows = db.exec(
+      `SELECT game_id, detail_json FROM game_details WHERE game_id IN (${placeholders})`,
+      gameIds,
+    )
+    if (rows.length) {
+      for (const [id, json] of rows[0].values as any[]) {
+        try {
+          result.set(Number(id), JSON.parse(json as string) as Game)
+        } catch { /* 跳过损坏的 JSON */ }
+      }
+    }
+  } catch { /* DB 读取失败返回空 Map */ }
+  return result
 }
 
 export function hasGameDetail(gameId: number): boolean {

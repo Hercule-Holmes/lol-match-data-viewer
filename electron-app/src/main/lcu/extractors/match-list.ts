@@ -8,7 +8,7 @@
  */
 import { LcuHttpClient } from '../client'
 import { DETAIL_CONCUR } from '../concurrency'
-import { saveGameSummaries, getRecentGameSummaries } from '../../db/games'
+import { saveGameSummaries, getRecentGameSummaries, saveGameDetailsBatch, getGameDetailsBatch } from '../../db/games'
 import type {
   MatchListData,
   GameSummary,
@@ -171,7 +171,8 @@ const gameDetailCache = new Map<number, Game>()
 
 /**
  * 批量加载对局详情，返回 gameId → detail 映射。
- * 先查全局缓存，未命中的分批并行拉取（避免并发过高触发 ECONNREFUSED）。
+ * 三级查询：内存缓存 → 本地 DB → LCU API。
+ * LCU 拉取后自动持久化到 DB，下次启动可直接从 DB 加载。
  */
 async function loadDetailMap(
   client: LcuHttpClient,
@@ -189,9 +190,28 @@ async function loadDetailMap(
     }
   }
 
-  const cacheHits = gameIds.length - uncached.length
+  let memoryHits = gameIds.length - uncached.length
+  let dbHits = 0
   let fetchedCount = 0
 
+  // 第二级：从本地 DB 批量加载未命中内存缓存的详情
+  if (uncached.length > 0) {
+    const dbResults = getGameDetailsBatch(uncached)
+    for (const [gid, detail] of dbResults) {
+      gameDetailCache.set(gid, detail)
+      if (gameDetailCache.size > MAX_CACHE_SIZE) {
+        gameDetailCache.delete(gameDetailCache.keys().next().value)
+      }
+      result.set(gid, detail)
+      dbHits++
+      // 从 uncached 中移除（已从 DB 命中）
+      const idx = uncached.indexOf(gid)
+      if (idx !== -1) uncached.splice(idx, 1)
+    }
+  }
+
+  // 第三级：从 LCU API 拉取剩余未命中的详情
+  const toSave: Array<{ gameId: number; detail: Game }> = []
   for (let i = 0; i < uncached.length; i += DETAIL_CONCUR) {
     const batch = uncached.slice(i, i + DETAIL_CONCUR)
     const fetched = await Promise.all(
@@ -210,13 +230,19 @@ async function loadDetailMap(
         }
         result.set(d.gameId, d)
         fetchedCount++
+        toSave.push({ gameId: d.gameId, detail: d })
       }
     }
   }
 
+  // 异步持久化到 DB（不阻塞返回）
+  if (toSave.length > 0) {
+    saveGameDetailsBatch(toSave)
+  }
+
   console.log(
     `[LCU:MAIN] ${label}: ${result.size}/${gameIds.length} 场 ` +
-    `(缓存命中 ${cacheHits}, 新拉取 ${fetchedCount}/${uncached.length}, 缓存池 ${gameDetailCache.size})`
+    `(内存 ${memoryHits}, DB ${dbHits}, LCU ${fetchedCount}, 缓存池 ${gameDetailCache.size})`
   )
   return result
 }
@@ -256,12 +282,46 @@ function buildGameSummary(g: Game, selfPuuid: string): GameSummary {
 
   // 从 teams 数组中获取真实队伍 ID
   const teamsArr = g.teams || []
-  const blueTeamId = teamsArr.length >= 2
+  let blueTeamId = teamsArr.length >= 2
     ? (teamsArr[0].teamId === 100 ? 100 : teamsArr[1].teamId === 100 ? 100 : teamsArr[0].teamId)
     : 100
-  const redTeamId = teamsArr.length >= 2
+  let redTeamId = teamsArr.length >= 2
     ? (teamsArr[0].teamId === 200 ? 200 : teamsArr[1].teamId === 200 ? 200 : teamsArr[1].teamId)
     : 200
+
+  // CHERRY (斗魂竞技场) 的 teams 数组中败方 teamId 可能为 0，
+  // 但 participants 中实际使用 200。从 participants 中取真实 teamId 覆盖。
+  if (g.gameMode === 'CHERRY' || g.queueId === 1750) {
+    const teamIds = [...new Set(participants.map(p => p.teamId))].sort()
+    if (teamIds.length === 2) {
+      blueTeamId = teamIds[0]
+      redTeamId = teamIds[1]
+    }
+  }
+
+  let blueParticipants = buildBrief(participants, idMap, blueTeamId)
+  let redParticipants = buildBrief(participants, idMap, redTeamId)
+
+  // 斗魂竞技场 (CHERRY)：每边 3 个子队共 9 人，卡片过高。
+  // 限制每边最多 5 人（共 10 人），但必须包含用户所在子队的全部 3 人。
+  if (g.gameMode === 'CHERRY' || g.queueId === 1750) {
+    const selfSubteamId = stats.playerSubteamId
+    if (selfSubteamId != null) {
+      const subteamPids = new Set(
+        participants
+          .filter(p => (p.stats || {}).playerSubteamId === selfSubteamId)
+          .map(p => p.participantId)
+      )
+      const trim = (briefs: ParticipantBrief[]) => {
+        if (briefs.length <= 5) return briefs
+        const sub = briefs.filter(b => subteamPids.has(b.participantId))
+        const rest = briefs.filter(b => !subteamPids.has(b.participantId))
+        return [...sub, ...rest].slice(0, 5)
+      }
+      blueParticipants = trim(blueParticipants)
+      redParticipants = trim(redParticipants)
+    }
+  }
 
   return {
     gameId: g.gameId,
@@ -287,8 +347,8 @@ function buildGameSummary(g: Game, selfPuuid: string): GameSummary {
     champLevel: stats.champLevel || 0,
     teamId: selfP.teamId || 0,
     kdaRatio: Math.round(((kills + assists) / Math.max(deaths, 1)) * 100) / 100,
-    blueParticipants: buildBrief(participants, idMap, blueTeamId),
-    redParticipants: buildBrief(participants, idMap, redTeamId),
+    blueParticipants,
+    redParticipants,
     teamStats,
   }
 }

@@ -27,8 +27,8 @@ interface LcuApi {
   openExternal(url: string): Promise<void>
   chatWithAI(messages: Array<{ role: string; content: string }>): Promise<{ status: string; content?: string; message?: string }>
   loadRecentGames(puuid: string, limit: number): Promise<import('@shared/types').GameSummary[]>
-  loadGameDetail(gameId: number): Promise<import('@shared/types').GameRecord | null>
-  saveGameDetail(gameId: number, detail: import('@shared/types').GameRecord): Promise<void>
+  loadGameDetail(gameId: number): Promise<any>
+  saveGameDetail(gameId: number, detail: any): Promise<void>
   loadGameCount(puuid: string): Promise<number>
 }
 

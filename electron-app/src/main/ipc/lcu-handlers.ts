@@ -145,7 +145,7 @@ export function registerLcuHandlers(ctx: LcuHandlersContext = {}) {
     return getGameDetail(gameId)
   })
 
-  ipcMain.handle('db:save-game-detail', async (_event, gameId: number, detail: GameRecord) => {
+  ipcMain.handle('db:save-game-detail', async (_event, gameId: number, detail: any) => {
     const { saveGameDetail } = await import('../db/games')
     saveGameDetail(gameId, detail)
   })

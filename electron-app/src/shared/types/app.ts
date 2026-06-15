@@ -160,6 +160,12 @@ export interface ChampionMastery {
   last_play_time: number
 }
 
+export interface CherrySubteamData {
+  subteam_id: number
+  placement: number   // 1-6，子队最终排名
+  players: PlayerData[]
+}
+
 export interface GameRecord {
   game_id: number
   game_creation: string
@@ -172,6 +178,7 @@ export interface GameRecord {
   blue_team: TeamData
   red_team: TeamData
   champion_mastery: Record<string, ChampionMastery>
+  cherry_subteams?: CherrySubteamData[]  // 仅 CHERRY 模式，按排名 1→6 排列
 }
 
 export interface MatchData {

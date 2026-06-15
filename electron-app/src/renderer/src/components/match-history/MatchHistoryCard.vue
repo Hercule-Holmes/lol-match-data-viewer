@@ -143,6 +143,70 @@
         <button class="retry-btn" @click.stop="fetchDetail()">重试</button>
       </div>
       <template v-else-if="gameRecord">
+        <!-- ═══ CHERRY 斗魂竞技场：按子队排名 1→6 展示 ═══ -->
+        <table v-if="isCherry && gameRecord.cherry_subteams" class="team-table cherry-table">
+          <thead>
+            <tr>
+              <th class="col-player">玩家</th>
+              <th class="col-kda">KDA</th>
+              <th class="col-dmg-dealt">伤害</th>
+              <th class="col-dmg-taken">承伤</th>
+              <th class="col-gold">金币</th>
+              <th class="col-items">装备 / 增幅</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template v-for="st in gameRecord.cherry_subteams" :key="st.subteam_id">
+              <tr class="subteam-divider" :class="st.placement <= 3 ? 'cherry-win' : 'cherry-lose'">
+                <td colspan="6">
+                  <span class="placement-badge">第{{ st.placement }}名</span>
+                </td>
+              </tr>
+              <tr
+                v-for="p in st.players"
+                :key="p.puuid || p.summoner_id"
+                :class="{ self: p.puuid === selfPuuid, 'cherry-win': st.placement <= 3, 'cherry-lose': st.placement > 3 }"
+              >
+                <td class="col-player">
+                  <div class="player-identity">
+                    <div class="augments-col">
+                      <AugmentDisplay v-for="(augId, aidx) in (p.stats.arena.player_augments || []).slice(0, 4)" :key="aidx" :augment-id="augId" :size="18" />
+                    </div>
+                    <ChampionIcon class="detail-champ" :champion-id="p.champion_id" :size="32" round />
+                    <span class="player-name" :title="p.summoner_name">{{ p.summoner_name }}</span>
+                  </div>
+                </td>
+                <td class="col-kda">
+                  <div class="kda-numbers">
+                    <span class="k">{{ p.stats.kills }}</span>
+                    <span class="sep">/</span>
+                    <span class="d">{{ p.stats.deaths }}</span>
+                    <span class="sep">/</span>
+                    <span class="a">{{ p.stats.assists }}</span>
+                  </div>
+                  <div class="kda-sub">{{ p.stats.kda }} KDA</div>
+                </td>
+                <td class="col-dmg-dealt">
+                  <div class="dmg-value" title="对英雄伤害">{{ fmtDmg(p.stats.damage.total_to_champs) }}</div>
+                </td>
+                <td class="col-dmg-taken">
+                  <div class="dmg-value" title="承受伤害">{{ fmtDmg(p.stats.damage.total_taken) }}</div>
+                </td>
+                <td class="col-gold">
+                  <div class="gold-value">{{ fmtGold(p.stats.economy.gold_earned) }}</div>
+                </td>
+                <td class="col-items">
+                  <div class="items-row">
+                    <ItemDisplay v-for="(it, idx) in p.stats.items" :key="idx" :item-id="it" :size="20" />
+                  </div>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+
+        <!-- ═══ 标准模式 + 海克斯大乱斗：蓝/红队表格 ═══ -->
+        <template v-else>
         <table class="team-table" :class="isPlayerOnBlue ? ownTeamClass : enemyTeamClass">
           <thead>
             <tr>
@@ -344,6 +408,7 @@
             <span :class="gameRecord.red_team.first_tower ? 'obj-hit' : 'obj-miss'">●</span>
           </div>
         </div>
+        </template>
       </template>
     </div>
   </div>
@@ -433,6 +498,9 @@ const showPerks = computed(() => {
 
 /** 海克斯大乱斗模式 */
 const isKiwi = computed(() => game.gameMode === 'KIWI')
+
+/** 斗魂竞技场模式 */
+const isCherry = computed(() => game.gameMode === 'CHERRY' || game.queueId === 1750)
 
 /** 玩家是否在蓝队 */
 const isPlayerOnBlue = computed(() => game.teamId === 100)
@@ -1014,4 +1082,52 @@ function csPerMin(total: number): string {
 .obj-sep { color: var(--text-muted); }
 .obj-hit { font-weight: 700; }
 .obj-miss { opacity: 0.3; }
+
+/* ═══ CHERRY 斗魂竞技场：子队排名样式 ═══ */
+.cherry-table {
+  .subteam-divider {
+    height: 26px;
+    td {
+      padding: 3px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .placement-badge {
+      display: inline-block;
+      padding: 0 8px;
+      height: 18px;
+      line-height: 18px;
+      text-align: center;
+      border-radius: 3px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+  }
+  // 子队分隔行 + 玩家行统一底色
+  .cherry-win {
+    > td {
+      background: var(--card-win-bg);
+    }
+    &.subteam-divider > td {
+      color: var(--card-win-text);
+    }
+    .placement-badge {
+      background: rgba(59,130,246,0.30);
+      color: rgb(96,165,250);
+    }
+  }
+  .cherry-lose {
+    > td {
+      background: var(--card-lose-bg);
+    }
+    &.subteam-divider > td {
+      color: var(--card-lose-text);
+    }
+    .placement-badge {
+      background: rgba(239,68,68,0.25);
+      color: rgb(252,129,129);
+    }
+  }
+}
 </style>

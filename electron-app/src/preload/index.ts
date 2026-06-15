@@ -115,7 +115,7 @@ const api = {
   },
 
   /** DB: 保存对局详情到本地 */
-  saveGameDetail(gameId: number, detail: import('@shared/types').GameRecord): Promise<void> {
+  saveGameDetail(gameId: number, detail: any): Promise<void> {
     return ipcRenderer.invoke('db:save-game-detail', gameId, detail)
   },
 

@@ -5,6 +5,7 @@ import { LcuHttpClient } from '../client'
 import { DETAIL_CONCUR, batchAsync } from '../concurrency'
 import type {
   GameRecord,
+  CherrySubteamData,
   PlayerData,
   GameDataCache,
   PerkStyleData,
@@ -43,6 +44,7 @@ export async function fetchGameDetailsBatched(
         const bluePlayers: PlayerData[] = []
         const redPlayers: PlayerData[] = []
         const usedChampionIds: number[] = []
+        const allPlayers: PlayerData[] = []
 
         for (const p of detail?.participants || []) {
           const pid = p.participantId
@@ -55,6 +57,7 @@ export async function fetchGameDetailsBatched(
             champion_id: cid,
             stats: extractStatsFull(p),
           }
+          allPlayers.push(playerData)
 
           if (p.teamId === 100) {
             bluePlayers.push(playerData)
@@ -73,6 +76,29 @@ export async function fetchGameDetailsBatched(
           redPlayers
         )
 
+        // 斗魂竞技场 (CHERRY)：按子队分组，按排名 1→6 排列
+        let cherry_subteams: CherrySubteamData[] | undefined
+        const isCherry = detail?.gameMode === 'CHERRY' || detail?.queueId === 1750
+        if (isCherry) {
+          const subteamMap = new Map<number, { placement: number; players: PlayerData[] }>()
+          for (const p of allPlayers) {
+            const sid = p.stats.arena.player_subteam_id
+            if (sid == null) continue
+            const placement = p.stats.arena.subteam_placement
+            if (!subteamMap.has(sid)) {
+              subteamMap.set(sid, { placement, players: [] })
+            }
+            subteamMap.get(sid)!.players.push(p)
+          }
+          cherry_subteams = [...subteamMap.entries()]
+            .sort((a, b) => a[1].placement - b[1].placement)
+            .map(([id, data]) => ({
+              subteam_id: id,
+              placement: data.placement,
+              players: data.players,
+            }))
+        }
+
         return {
           game_id: gameId,
           game_creation: detail?.gameCreationDate || '',
@@ -86,6 +112,7 @@ export async function fetchGameDetailsBatched(
           blue_team: blueTeamData,
           red_team: redTeamData,
           champion_mastery: {},
+          cherry_subteams,
         }
       } catch (err: unknown) {
         console.warn(`[LCU:MAIN] 跳过对局 #${gameId}: ${errMsg(err)}`)
