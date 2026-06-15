@@ -696,8 +696,8 @@ function csPerMin(total: number): string {
     text-align: center;
     font-size: 12px;
     border-radius: 50%;
-    background-color: rgba(0, 0, 0, 0.621);
-    color: var(--text-primary);
+    background-color: rgba(0, 0, 0, 0.62);
+    color: #e0e0e0;
   }
 
   .summoner-spells,
