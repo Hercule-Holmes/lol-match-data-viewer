@@ -15,7 +15,7 @@ import type {
   ParticipantBrief,
   CherrySubteamData,
 } from '@shared/types/app'
-import type { SgpGame, SgpParticipant } from './types'
+import type { SgpGame, SgpParticipant, SgpTeam } from './types'
 
 // ── 工具 ──
 
@@ -234,27 +234,27 @@ export function extractPlayerData(p: SgpParticipant): PlayerData {
 // ── TeamData ──
 
 export function extractTeamData(
-  team: { teamId: number; win: boolean },
+  sgpTeam: SgpTeam,
   players: PlayerData[],
   allParticipants: SgpParticipant[],
 ): TeamData {
   const firstBloodTeamId = allParticipants.find(p2 => p2.firstBloodKill)?.teamId
   return {
-    team_id: team.teamId,
-    win: team.win,
-    bans: [],
-    baron_kills: 0,
-    dragon_kills: 0,
-    rift_herald_kills: 0,
+    team_id: sgpTeam.teamId,
+    win: sgpTeam.win,
+    bans: sgpTeam.bans?.map(b => b.championId) ?? [],
+    baron_kills: sgpTeam.objectives.baron?.kills ?? 0,
+    dragon_kills: sgpTeam.objectives.dragon?.kills ?? 0,
+    rift_herald_kills: sgpTeam.objectives.riftHerald?.kills ?? 0,
     vilemaw_kills: 0,
-    horde_kills: 0,
-    tower_kills: 0,
-    inhibitor_kills: 0,
-    first_blood: firstBloodTeamId === team.teamId,
-    first_tower: false,  // 可从 participants firstTowerKill 推导，简化处理
-    first_inhibitor: false,
-    first_baron: false,
-    first_dragon: false,
+    horde_kills: sgpTeam.objectives.horde?.kills ?? 0,
+    tower_kills: sgpTeam.objectives.tower?.kills ?? 0,
+    inhibitor_kills: sgpTeam.objectives.inhibitor?.kills ?? 0,
+    first_blood: firstBloodTeamId === sgpTeam.teamId,
+    first_tower: sgpTeam.objectives.tower?.first ?? false,
+    first_inhibitor: sgpTeam.objectives.inhibitor?.first ?? false,
+    first_baron: sgpTeam.objectives.baron?.first ?? false,
+    first_dragon: sgpTeam.objectives.dragon?.first ?? false,
     players,
   }
 }
@@ -425,6 +425,36 @@ export function extractGameRecord(game: SgpGame): GameRecord {
     .filter(p => p.teamId === redTeamId)
     .map(p => extractPlayerData(p))
 
+  // 从 json.teams 中查找 SGP 队伍数据（含 objectives/bans）
+  const blueSgpTeam: SgpTeam = json.teams?.find(t => t.teamId === blueTeamId) ?? {
+    teamId: blueTeamId,
+    win: bluePlayers[0]?.stats.win ?? false,
+    bans: [],
+    objectives: {
+      baron: { first: false, kills: 0 },
+      champion: { first: false, kills: 0 },
+      dragon: { first: false, kills: 0 },
+      horde: { first: false, kills: 0 },
+      inhibitor: { first: false, kills: 0 },
+      riftHerald: { first: false, kills: 0 },
+      tower: { first: false, kills: 0 },
+    },
+  }
+  const redSgpTeam: SgpTeam = json.teams?.find(t => t.teamId === redTeamId) ?? {
+    teamId: redTeamId,
+    win: redPlayers[0]?.stats.win ?? false,
+    bans: [],
+    objectives: {
+      baron: { first: false, kills: 0 },
+      champion: { first: false, kills: 0 },
+      dragon: { first: false, kills: 0 },
+      horde: { first: false, kills: 0 },
+      inhibitor: { first: false, kills: 0 },
+      riftHerald: { first: false, kills: 0 },
+      tower: { first: false, kills: 0 },
+    },
+  }
+
   return {
     game_id: json.gameId,
     game_creation: new Date(json.gameCreation).toISOString(),
@@ -434,16 +464,8 @@ export function extractGameRecord(game: SgpGame): GameRecord {
     queue_id: json.queueId,
     map_id: json.mapId,
     game_version: json.gameVersion || '',
-    blue_team: extractTeamData(
-      { teamId: blueTeamId, win: bluePlayers[0]?.stats.win ?? false },
-      bluePlayers,
-      participants,
-    ),
-    red_team: extractTeamData(
-      { teamId: redTeamId, win: redPlayers[0]?.stats.win ?? false },
-      redPlayers,
-      participants,
-    ),
+    blue_team: extractTeamData(blueSgpTeam, bluePlayers, participants),
+    red_team: extractTeamData(redSgpTeam, redPlayers, participants),
     champion_mastery: {},
     cherry_subteams: json.gameMode === 'CHERRY' || json.queueId === 1750
       ? extractCherrySubteams(participants)

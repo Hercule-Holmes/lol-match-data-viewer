@@ -501,7 +501,7 @@ export async function fetchMatchList(
   if (sgp.available) {
     try {
       console.log('[LCU:MAIN] fetch-match-list: trying SGP...')
-      const { summaries } = await sgp.fetchGames(puuid, 0, 200)
+      const { summaries, records } = await sgp.fetchGames(puuid, 0, 200)
       console.log(`[LCU:MAIN] SGP fetch-match-list: ${summaries.length} 场`)
 
       const result: MatchListData = {
@@ -513,6 +513,7 @@ export async function fetchMatchList(
       }
 
       try { saveGameSummaries(puuid, result.games) } catch { /* 降级 */ }
+      try { saveGameDetailsBatch(records.map(r => ({ gameId: r.game_id, detail: r as any }))) } catch { /* 降级 */ }
       return result
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -563,7 +564,7 @@ export async function fetchMatchListForPlayer(
   const sgp = SgpManager.instance
   if (sgp.available) {
     try {
-      const { summaries } = await sgp.fetchGames(targetPuuid, 0, 200)
+      const { summaries, records } = await sgp.fetchGames(targetPuuid, 0, 200)
       console.log(`[LCU:MAIN] SGP fetchMatchListForPlayer ${summonerName}: ${summaries.length} 场`)
 
       const result: MatchListData = {
@@ -575,6 +576,7 @@ export async function fetchMatchListForPlayer(
       }
 
       try { saveGameSummaries(targetPuuid, result.games) } catch { /* 降级 */ }
+      try { saveGameDetailsBatch(records.map(r => ({ gameId: r.game_id, detail: r as any }))) } catch { /* 降级 */ }
       return result
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
