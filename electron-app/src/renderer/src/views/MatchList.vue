@@ -49,16 +49,17 @@ onMounted(async () => {
   const { connected, summoner } = await initializeSession(createSessionRepository(window.lcuApi))
   if (connected && summoner) {
     tabStore.updateDefaultTab(summoner.puuid, summonerDisplayName(summoner), summoner.profileIconId, summoner.summonerLevel)
-    if (!gds.isLoaded) {
-      await gds.fetchGameData()
-    }
-    // Init SGP in background — don't block UI.
-    // rsoPlatformId comes from the LCU connection info (e.g. TENCENT_HN1).
+    // Init SGP first — must be ready before match history loads (otherwise
+    // the first fetch races ahead and falls through to LCU).
+    // Token fetch is a single local LCU call, <100ms typical.
     const platform = conn?.rsoPlatformId || ''
     if (platform) {
-      window.lcuApi.sgpInit(platform).then(ok => {
+      await window.lcuApi.sgpInit(platform).then(ok => {
         console.log(ok ? '[APP] SGP ready' : '[APP] SGP unavailable, using LCU')
       }).catch((err: unknown) => console.warn('[APP] SGP init failed:', err))
+    }
+    if (!gds.isLoaded) {
+      await gds.fetchGameData()
     }
   }
 })

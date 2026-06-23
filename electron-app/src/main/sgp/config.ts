@@ -17,23 +17,33 @@ import builtinServers from './tencent-servers.json'
 
 const SERVERS = builtinServers.servers as Record<string, { matchHistory?: string | null; common?: string | null }>
 
-/** 根据 rsoPlatformId（如 TENCENT_HN1）解析 SGP 服务器地址 */
+/**
+ * 根据 rsoPlatformId 解析 SGP 服务器地址。
+ *
+ * rsoPlatformId 来自 LCU 命令行 `--rso_platform_id=HN1`，不包含 `TENCENT_` 前缀。
+ * JSON 配置文件中使用 `TENCENT_HN1` 格式的完整 key（兼容 LeagueAkari 格式），
+ * 因此查找时需同时尝试带前缀和不带前缀的 key。
+ */
 export function resolveSgpBaseUrl(rsoPlatformId: string): string {
-  const serverId = rsoPlatformId.toUpperCase()
-  const entry = SERVERS[serverId]
+  const raw = rsoPlatformId.toUpperCase()
+  // rsoPlatformId 实际为 "HN1" 不带 TENCENT_ 前缀，
+  // JSON key 为 "TENCENT_HN1" 格式，两者都尝试
+  const tencentKey = raw.startsWith('TENCENT_') ? raw : `TENCENT_${raw}`
+  const entry = SERVERS[tencentKey] || SERVERS[raw]
   if (entry?.matchHistory) {
     return entry.matchHistory
   }
 
-  // 动态拼域名 fallback
-  const zone = serverId.replace('TENCENT_', '').toLowerCase()
-  return `https://${zone}-sgp.lol.qq.com:21019`
+  // 动态 fallback: k8s 优先（国服生产环境），非 k8s 兜底
+  const zone = tencentKey.replace('TENCENT_', '').toLowerCase()
+  return `https://${zone}-k8s-sgp.lol.qq.com:21019`
 }
 
-/** 从 rsoPlatformId 提取子 ID（去掉 TENCENT_ 前缀） */
+/** 从 rsoPlatformId 提取子 ID，去掉可能存在的 TENCENT_ 前缀 */
 export function getSgpSubId(rsoPlatformId: string): string {
-  if (rsoPlatformId.toUpperCase().startsWith('TENCENT_')) {
-    return rsoPlatformId.split('_')[1]
+  const upper = rsoPlatformId.toUpperCase()
+  if (upper.startsWith('TENCENT_')) {
+    return upper.split('_')[1]
   }
-  return rsoPlatformId
+  return upper
 }
