@@ -131,3 +131,64 @@ export function hasGameDetail(gameId: number): boolean {
   const rows = db.exec('SELECT 1 FROM game_details WHERE game_id = ?', [gameId])
   return rows.length > 0
 }
+
+export interface DailyGameRow {
+  game_id: number
+  game_mode: string
+  queue_id: number
+  champion_id: number
+  win: number
+  kills: number
+  deaths: number
+  assists: number
+  game_creation: number
+  game_duration: number
+}
+
+/** 查询指定玩家某天的全部对局 */
+export function getDailyGames(puuid: string, dateStr: string): DailyGameRow[] {
+  const db = getDbSafe()
+  if (!db) return []
+  try {
+    const rows = db.exec(
+      `SELECT game_id, game_mode, queue_id, champion_id, win, kills, deaths, assists, game_creation, game_duration
+       FROM games WHERE puuid = ?
+       ORDER BY game_creation DESC`,
+      [puuid]
+    )
+    if (!rows.length) return []
+    const results: DailyGameRow[] = []
+    for (const r of rows[0].values as any[]) {
+      const d = new Date(r[8] as number)
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+      if (key === dateStr) {
+        results.push({
+          game_id: r[0], game_mode: r[1], queue_id: r[2], champion_id: r[3],
+          win: r[4], kills: r[5], deaths: r[6], assists: r[7],
+          game_creation: r[8], game_duration: r[9],
+        })
+      }
+    }
+    return results
+  } catch { return [] }
+}
+
+/** 获取 DB 中有数据的最近日期列表 */
+export function getRecentDates(puuid: string, limit: number = 14): string[] {
+  const db = getDbSafe()
+  if (!db) return []
+  try {
+    const rows = db.exec(
+      `SELECT DISTINCT game_creation FROM games WHERE puuid = ? ORDER BY game_creation DESC LIMIT ?`,
+      [puuid, limit * 20] // oversample since each game is a row
+    )
+    if (!rows.length) return []
+    const dates = new Set<string>()
+    for (const [ts] of rows[0].values as any[]) {
+      const d = new Date(ts as number)
+      dates.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`)
+      if (dates.size >= limit) break
+    }
+    return [...dates]
+  } catch { return [] }
+}

@@ -123,6 +123,16 @@ const api = {
   loadGameCount(puuid: string): Promise<number> {
     return ipcRenderer.invoke('db:game-count', puuid)
   },
+
+  /** DB: 获取指定日期对局列表 */
+  getDailyGames(puuid: string, date: string): Promise<any[]> {
+    return ipcRenderer.invoke('db:daily-games', puuid, date)
+  },
+
+  /** DB: 获取最近有数据的日期 */
+  getRecentDates(puuid: string, limit: number): Promise<string[]> {
+    return ipcRenderer.invoke('db:recent-dates', puuid, limit)
+  },
 }
 
 contextBridge.exposeInMainWorld('lcuApi', api)

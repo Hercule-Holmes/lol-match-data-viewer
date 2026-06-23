@@ -154,4 +154,14 @@ export function registerLcuHandlers(ctx: LcuHandlersContext = {}) {
     const { getGameSummaryCount } = await import('../db/games')
     return getGameSummaryCount(puuid)
   })
+
+  ipcMain.handle('db:daily-games', async (_event, puuid: string, date: string) => {
+    const { getDailyGames } = await import('../db/games')
+    return getDailyGames(puuid, date)
+  })
+
+  ipcMain.handle('db:recent-dates', async (_event, puuid: string, limit: number) => {
+    const { getRecentDates } = await import('../db/games')
+    return getRecentDates(puuid, limit)
+  })
 }

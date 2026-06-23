@@ -30,6 +30,8 @@ interface LcuApi {
   loadGameDetail(gameId: number): Promise<any>
   saveGameDetail(gameId: number, detail: any): Promise<void>
   loadGameCount(puuid: string): Promise<number>
+  getDailyGames(puuid: string, date: string): Promise<any[]>
+  getRecentDates(puuid: string, limit: number): Promise<string[]>
 }
 
 declare global {
