@@ -165,10 +165,18 @@ export function registerLcuHandlers(ctx: LcuHandlersContext = {}) {
     return fetchEntitlementsToken()
   })
 
-  // After LCU connection is established, try to init SGP
+  // After LCU connection is established, try to init SGP.
+  // Wrapped in try/catch — unexpected errors (e.g. missing config) return false
+  // so the renderer always gets a clean boolean, never an IPC rejection.
   ipcMain.handle('sgp:init', async (_event, rsoPlatformId: string): Promise<boolean> => {
-    const { SgpManager } = await import('../sgp')
-    return SgpManager.instance.init(rsoPlatformId)
+    try {
+      const { SgpManager } = await import('../sgp')
+      return await SgpManager.instance.init(rsoPlatformId)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.warn('[SGP] init threw — falling back to LCU:', msg)
+      return false
+    }
   })
 
   ipcMain.handle('sgp:destroy', async (): Promise<void> => {
