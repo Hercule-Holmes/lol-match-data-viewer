@@ -58,7 +58,7 @@ onMounted(async () => {
     if (platform) {
       window.lcuApi.sgpInit(platform).then(ok => {
         console.log(ok ? '[APP] SGP ready' : '[APP] SGP unavailable, using LCU')
-      }).catch(() => {})
+      }).catch((err: unknown) => console.warn('[APP] SGP init failed:', err))
     }
   }
 })
