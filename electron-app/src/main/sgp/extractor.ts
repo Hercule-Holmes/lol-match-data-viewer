@@ -223,9 +223,7 @@ export function extractPlayerStats(p: SgpParticipant): PlayerStats {
 export function extractPlayerData(p: SgpParticipant): PlayerData {
   return {
     puuid: p.puuid || '',
-    summoner_name: p.summonerName || p.riotIdGameName
-      ? `${p.riotIdGameName}#${p.riotIdTagline}`
-      : '',
+    summoner_name: p.summonerName || (p.riotIdGameName ? `${p.riotIdGameName}#${p.riotIdTagline}` : ''),
     profile_icon_id: safeInt(p.profileIcon),
     summoner_id: safeInt(p.summonerId),
     champion_id: safeInt(p.championId),
@@ -368,6 +366,8 @@ export function extractGameSummary(game: SgpGame, selfPuuid: string): GameSummar
   const playerDamageTaken = safeInt(selfP.totalDamageTaken)
   const playerGold = safeInt(selfP.goldEarned)
 
+  const fp = flattenPerks(selfP)
+
   const teamStats: TeamStats = {
     killParticipation: teamKills > 0 ? Math.round((kills + assists) / teamKills * 100) : 0,
     damageShare: teamDamage > 0 ? Math.round(playerDamage / teamDamage * 100) : 0,
@@ -394,9 +394,9 @@ export function extractGameSummary(game: SgpGame, selfPuuid: string): GameSummar
     role: selfP.teamPosition || selfP.role || '',
     spell1Id: selfP.spell1Id || 0,
     spell2Id: selfP.spell2Id || 0,
-    perkPrimaryStyle: flattenPerks(selfP).primary_style,
-    perkSubStyle: flattenPerks(selfP).sub_style,
-    perk0: flattenPerks(selfP).perks[0] || 0,
+    perkPrimaryStyle: fp.primary_style,
+	    perkSubStyle: fp.sub_style,
+	    perk0: fp.perks[0] || 0,
     items: [selfP.item0, selfP.item1, selfP.item2, selfP.item3, selfP.item4, selfP.item5, selfP.item6],
     champLevel: safeInt(selfP.champLevel),
     teamId: selfP.teamId,
