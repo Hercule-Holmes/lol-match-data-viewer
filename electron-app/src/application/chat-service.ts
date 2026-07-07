@@ -7,7 +7,11 @@ export function buildChatMessages(
   history: Array<{ role: string; content: string }>,
 ): Array<{ role: string; content: string }> {
   const systemPrompt = buildSystemPrompt(games, gameData)
-  return [{ role: 'system', content: systemPrompt }, ...history]
+  // 用 .map() 创建纯对象副本，剥离 Vue reactive Proxy，避免 IPC 结构化克隆报错
+  return [
+    { role: 'system', content: systemPrompt },
+    ...history.map(m => ({ role: m.role, content: m.content }))
+  ]
 }
 
 function buildSystemPrompt(games: GameRecord[], gameData: GameDataCache): string {

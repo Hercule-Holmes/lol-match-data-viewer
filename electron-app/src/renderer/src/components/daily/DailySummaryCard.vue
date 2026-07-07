@@ -188,7 +188,6 @@ onMounted(async () => {
       c.games++; if (g.win) c.wins++; c.kills += g.kills; c.deaths += g.deaths; c.assists += g.assists
     }
     const sorted = [...champMap.entries()].sort((a, b) => b[1].games - a[1].games).slice(0, 8)
-    const maxGames = sorted[0]?.[1].games || 1
     topChampions.value = sorted.map(([cid, c]) => ({
       championId: cid,
       name: gds.champions[cid]?.name || `英雄${cid}`,
@@ -198,7 +197,7 @@ onMounted(async () => {
       avgDeaths: +(c.deaths / c.games).toFixed(1),
       avgAssists: +(c.assists / c.games).toFixed(1),
       winRate: Math.round(c.wins / c.games * 100),
-      barPct: Math.round(c.games / maxGames * 100),
+      barPct: Math.round(c.wins / c.games * 100),
     }))
 
     // 高光时刻

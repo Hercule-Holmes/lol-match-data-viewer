@@ -28,6 +28,20 @@
       </div>
     </NPopover>
 
+    <!-- 每日总结 -->
+    <NTooltip placement="right">
+      <template #trigger>
+        <div class="menu-item" @click="showDailySummary = true">
+          <div class="menu-item-inner">
+            <NIcon class="menu-item-icon" :color="iconColor">
+              <CalendarOutline />
+            </NIcon>
+          </div>
+        </div>
+      </template>
+      <span class="simple-popover" :style="{ color: textColor }">每日总结</span>
+    </NTooltip>
+
     <!-- 主题切换按钮 -->
     <NTooltip placement="right">
       <template #trigger>
@@ -42,6 +56,13 @@
       </template>
       <span class="simple-popover" :style="{ color: textColor }">{{ themeStore.isDark ? '切换亮色主题' : '切换暗色主题' }}</span>
     </NTooltip>
+
+    <!-- 每日总结弹窗 -->
+    <DailySummaryCard
+      v-if="showDailySummary"
+      :puuid="activeTab?.puuid || ''"
+      @close="showDailySummary = false"
+    />
 
     <!-- 设置按钮 -->
     <NTooltip placement="right">
@@ -62,6 +83,7 @@
 <script setup lang="ts">
 import { NBadge, NIcon, NPopover, NTooltip } from 'naive-ui'
 import {
+  CalendarOutline,
   CheckmarkCircleOutline,
   CloseCircleOutline,
   MoonOutline,
@@ -71,10 +93,16 @@ import {
 } from '@vicons/ionicons5'
 import { computed, ref } from 'vue'
 import { useThemeStore } from '@/stores/theme'
+import { useTabStore } from '@/stores/tab'
+import { storeToRefs } from 'pinia'
 import SettingsDialog from '@/components/settings/SettingsDialog.vue'
+import DailySummaryCard from '@/components/daily/DailySummaryCard.vue'
 
 const themeStore = useThemeStore()
+const tabStore = useTabStore()
+const { activeTab } = storeToRefs(tabStore)
 const showSettings = ref(false)
+const showDailySummary = ref(false)
 
 const iconColor = computed(() =>
   themeStore.isDark ? 'rgba(255, 255, 255, 0.8)' : 'rgba(0, 0, 0, 0.7)'

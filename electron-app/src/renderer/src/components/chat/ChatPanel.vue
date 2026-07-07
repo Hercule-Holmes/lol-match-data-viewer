@@ -27,9 +27,8 @@
         <div v-if="msg.role === 'assistant'" class="msg-avatar avatar-ai">🤖</div>
         <div class="msg-bubble-wrapper" :class="msg.role === 'user' ? 'bubble-right' : 'bubble-left'">
           <div class="msg-sender">{{ msg.role === 'user' ? '你' : 'AI 助手' }}</div>
-          <div class="msg-bubble" :class="msg.role === 'user' ? 'bubble-user' : 'bubble-ai'">
-            {{ msg.content }}
-          </div>
+          <div v-if="msg.role === 'user'" class="msg-bubble bubble-user">{{ msg.content }}</div>
+          <div v-else class="msg-bubble bubble-ai" v-html="renderMarkdown(msg.content)" />
         </div>
         <div v-if="msg.role === 'user'" class="msg-avatar avatar-user">👤</div>
       </div>
@@ -130,6 +129,50 @@ function scrollToBottom() {
     const el = messagesContainer.value
     if (el) el.scrollTop = el.scrollHeight
   })
+}
+
+/**
+ * 轻量 Markdown → HTML 渲染
+ * 处理：**粗体**、`行内代码`、- 无序列表、换行
+ */
+function renderMarkdown(text: string): string {
+  // 1. 转义 HTML 特殊字符
+  const escapeHtml = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+  // 2. 行内转换（在单行内做，避免跨行匹配）
+  const renderInline = (line: string): string => {
+    let html = escapeHtml(line)
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>')
+    return html
+  }
+
+  // 3. 逐行处理
+  const lines = text.split('\n')
+  const out: string[] = []
+  let inList = false
+
+  for (const line of lines) {
+    const trimmed = line.trimStart()
+    const isListItem = /^[-*] /.test(trimmed)
+
+    if (isListItem) {
+      if (!inList) { out.push('<ul>'); inList = true }
+      const content = trimmed.slice(2)  // 去掉 "- "
+      out.push('<li>' + renderInline(content) + '</li>')
+    } else {
+      if (inList) { out.push('</ul>'); inList = false }
+      if (trimmed === '') {
+        out.push('<br>')
+      } else {
+        out.push('<p>' + renderInline(line) + '</p>')
+      }
+    }
+  }
+  if (inList) out.push('</ul>')
+
+  return out.join('')
 }
 
 async function sendMessage() {
@@ -311,8 +354,20 @@ watch(() => messages.value.length, () => {
   font-size: 13px;
   line-height: 1.55;
   border-radius: 12px;
-  white-space: pre-wrap;
   word-break: break-word;
+
+  :deep(p) { margin: 0; }
+  :deep(p + p) { margin-top: 6px; }
+  :deep(strong) { font-weight: 700; color: inherit; }
+  :deep(code) {
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.92em;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  }
+  :deep(ul) { margin: 4px 0; padding-left: 18px; }
+  :deep(li) { margin: 2px 0; }
+  :deep(br) { content: ''; display: block; margin-top: 4px; }
 }
 
 .bubble-ai {
@@ -320,6 +375,11 @@ watch(() => messages.value.length, () => {
   border: 1px solid var(--chat-bubble-ai-border);
   border-radius: 2px 12px 12px 12px;
   color: var(--chat-bubble-ai-text);
+
+  :deep(code) {
+    background: rgba(255, 255, 255, 0.08);
+    color: #e8c47c;
+  }
 }
 
 .bubble-user {
