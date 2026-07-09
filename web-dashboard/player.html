@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>冬天杯4.0 - 选手匹配端</title>
+  <link rel="stylesheet" href="match.css">
+</head>
+<body>
+  <main class="page">
+    <div class="top">
+      <div>
+        <div class="title">冬天杯4.0 选手匹配端</div>
+        <div class="sub">登录后仅可操作自己的匹配状态</div>
+      </div>
+      <a href="./index.html">返回数据看板</a>
+    </div>
+
+    <section id="login-panel" class="panel">
+      <div class="row">
+        <input id="player-id" placeholder="输入你的选手ID" maxlength="32">
+        <input id="display-name" placeholder="显示名称（可选）" maxlength="32">
+        <button id="btn-login">登录</button>
+      </div>
+      <div class="notice">当前方案为可用性测试：仅ID登录，后续可升级PIN码。</div>
+    </section>
+
+    <section id="player-panel" class="panel hidden">
+      <div class="row" style="justify-content: space-between;">
+        <div>
+          <div id="welcome" class="title" style="font-size:18px;"></div>
+          <div id="status-line" class="sub"></div>
+        </div>
+        <div class="row">
+          <button id="btn-start" class="ok">开始匹配</button>
+          <button id="btn-cancel" class="warn">取消匹配</button>
+          <button id="btn-logout" class="secondary">退出登录</button>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="kpi">
+          <div class="label">胜场</div>
+          <div id="kpi-wins" class="value">0</div>
+        </div>
+        <div class="kpi">
+          <div class="label">总场次</div>
+          <div id="kpi-total" class="value">0</div>
+        </div>
+        <div class="kpi">
+          <div class="label">负场</div>
+          <div id="kpi-losses" class="value">0</div>
+        </div>
+        <div class="kpi">
+          <div class="label">胜率</div>
+          <div id="kpi-rate" class="value">0%</div>
+        </div>
+      </div>
+
+      <div class="notice">当后台发布匹配结果后，你将进入锁定状态，无法取消匹配。</div>
+    </section>
+  </main>
+
+  <script type="module" src="player.js"></script>
+</body>
+</html>

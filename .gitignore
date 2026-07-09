@@ -10,6 +10,9 @@ node_modules/
 out/
 dist/
 .env
+.dev.vars
+web-dashboard/worker/.dev.vars
+web-dashboard/worker/.wrangler/
 *.log
 
 # IDE

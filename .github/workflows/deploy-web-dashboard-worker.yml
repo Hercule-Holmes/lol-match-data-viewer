@@ -1,0 +1,50 @@
+name: Deploy Web Dashboard Worker
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "web-dashboard/**"
+      - ".github/workflows/deploy-web-dashboard-worker.yml"
+  pull_request:
+    paths:
+      - "web-dashboard/**"
+      - ".github/workflows/deploy-web-dashboard-worker.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web-dashboard/worker
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: web-dashboard/worker/package.json
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Deploy Preview
+        if: github.event_name == 'pull_request'
+        run: npx wrangler deploy --env preview
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ADMIN_PASSWORD_HASH: ${{ secrets.ADMIN_PASSWORD_HASH }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+
+      - name: Deploy Production
+        if: github.event_name == 'push'
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ADMIN_PASSWORD_HASH: ${{ secrets.ADMIN_PASSWORD_HASH }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}

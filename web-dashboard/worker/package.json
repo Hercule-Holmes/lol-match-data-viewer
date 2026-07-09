@@ -1,0 +1,14 @@
+{
+  "name": "lol-match-dashboard-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "d1:migrate": "wrangler d1 execute lol-match-dashboard --file ./schema.sql",
+    "d1:migrate:preview": "wrangler d1 execute lol-match-dashboard-preview --file ./schema.sql --env preview"
+  },
+  "devDependencies": {
+    "wrangler": "^4.24.3"
+  }
+}

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>冬天杯4.0 - 后台管理</title>
+  <link rel="stylesheet" href="match.css">
+</head>
+<body>
+  <main class="page">
+    <div class="top">
+      <div>
+        <div class="title">冬天杯4.0 后台管理</div>
+        <div class="sub">查看匹配池、发布对局、录入胜负</div>
+      </div>
+      <div class="row">
+        <a href="./index.html">公开看板</a>
+        <button id="btn-logout" class="secondary hidden">退出后台</button>
+      </div>
+    </div>
+
+    <section id="admin-login" class="panel">
+      <div class="row">
+        <input id="admin-username" placeholder="后台账号" value="admin">
+        <input id="admin-password" placeholder="后台密码" type="password">
+        <button id="btn-login">登录后台</button>
+      </div>
+      <div class="notice">建议叠加 Cloudflare Access 进一步保护后台页面。</div>
+    </section>
+
+    <section id="admin-console" class="hidden">
+      <section class="panel">
+        <div class="title" style="font-size:18px;">总览</div>
+        <div id="summary-grid" class="grid"></div>
+      </section>
+
+      <section class="panel">
+        <div class="title" style="font-size:18px;">Excel 录入选手</div>
+        <div class="notice">支持直接粘贴 Excel 内容（推荐列：playerId、displayName、wins、totalGames、status）。status 可填：idle/queueing/空闲/匹配中。</div>
+        <textarea id="players-import-text" style="width:100%;min-height:140px;margin-top:8px;background:#0c0d12;color:#eceef5;border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:10px;" placeholder="示例：&#10;player001\t小明\t3\t5\tqueueing&#10;player002\t小红\t1\t2\tidle"></textarea>
+        <div class="row" style="margin-top:10px;">
+          <label style="display:flex;gap:6px;align-items:center;font-size:13px;color:#8e95aa;">
+            <input id="import-replace-existing" type="checkbox" checked>
+            清空现有选手及场次后导入（谨慎）
+          </label>
+          <button id="btn-import-players" class="ok">导入选手</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="row" style="justify-content: space-between;">
+          <div class="title" style="font-size:18px;">当前匹配池</div>
+          <button id="btn-refresh-queue" class="secondary">刷新</button>
+        </div>
+        <div class="notice">必须凑齐 10 人（A/B 队各 5 人）才可发布。</div>
+        <div id="queue-wrap"></div>
+      </section>
+
+      <section class="panel">
+        <div class="title" style="font-size:18px;">发布匹配结果</div>
+        <div class="row">
+          <input id="team-a" style="min-width:360px;" placeholder="A队 playerId，逗号分隔（5人）">
+          <input id="team-b" style="min-width:360px;" placeholder="B队 playerId，逗号分隔（5人）">
+          <button id="btn-publish">发布对局（锁定）</button>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <input id="max-matches" style="min-width:180px;" placeholder="随机生成场次数（可选）">
+          <button id="btn-random-publish" class="ok">按匹配池随机批量分组</button>
+        </div>
+        <div class="notice">将按当前匹配池随机分组，每 10 人生成 1 场（A/B 各 5 人），支持同时多场。</div>
+        <div id="action-message" class="notice"></div>
+      </section>
+
+      <section class="panel">
+        <div class="title" style="font-size:18px;">场次管理</div>
+        <div id="match-wrap"></div>
+      </section>
+
+      <section class="panel">
+        <div class="title" style="font-size:18px;">选手战绩</div>
+        <div id="player-wrap"></div>
+      </section>
+    </section>
+  </main>
+
+  <script type="module" src="admin.js"></script>
+</body>
+</html>
