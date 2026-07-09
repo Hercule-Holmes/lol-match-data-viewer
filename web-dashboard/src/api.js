@@ -1,12 +1,19 @@
 import { getToken } from "./auth.js";
 
+const DEFAULT_API_BASE_URL = "https://lol-match-dashboard-api.1693402463.workers.dev";
+const API_BASE_URL =
+  typeof window !== "undefined" &&
+  (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost")
+    ? ""
+    : DEFAULT_API_BASE_URL;
+
 async function request(path, options = {}) {
   const headers = new Headers(options.headers || {});
   headers.set("content-type", "application/json");
   const token = getToken(options.role);
   if (token) headers.set("authorization", `Bearer ${token}`);
 
-  const response = await fetch(path, {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers,
   });
