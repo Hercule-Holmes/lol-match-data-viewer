@@ -269,6 +269,19 @@ async function finishMatch(matchId, winnerTeam) {
   }
 }
 
+async function voidMatch(matchId) {
+  const ok = window.confirm(`确认将对局 #${matchId} 判定为流局吗？该操作会把参赛选手恢复为空闲。`);
+  if (!ok) return;
+  try {
+    await api.voidMatch(matchId);
+    setActionMessage(`已将对局 #${matchId} 判定为流局`);
+    await refreshDashboard();
+  } catch (error) {
+    setActionMessage(`流局失败：${error.message}`);
+    showError(error.message);
+  }
+}
+
 async function correctWinner(matchId, winnerTeam) {
   try {
     await api.correctMatchWinner(matchId, winnerTeam);
@@ -510,6 +523,10 @@ function renderMatches(matches) {
                   <button class="secondary" data-action="finishB" data-id="${m.id}">B胜</button>
                 `
                 : `<button disabled>A胜</button><button disabled>B胜</button>`;
+            const voidBtn =
+              m.status === "locked" || m.status === "in_game"
+                ? `<button class="warn" data-action="void" data-id="${m.id}">流局</button>`
+                : `<button disabled>流局</button>`;
             const correctBtns =
               m.status === "finished"
                 ? `
@@ -526,7 +543,7 @@ function renderMatches(matches) {
                 <td>${escapeHtml((m.teamBPlayers || []).join(", ") || "-")}</td>
                 <td>${fmtDateTime(m.created_at)}</td>
                 <td>${fmtDateTime(m.started_at)}</td>
-                <td>${startBtn} ${finishBtns} ${correctBtns}</td>
+                <td>${startBtn} ${finishBtns} ${voidBtn} ${correctBtns}</td>
               </tr>
             `;
           })
@@ -547,6 +564,7 @@ function renderMatches(matches) {
       if (action === "start") await startMatch(matchId);
       if (action === "finishA") await finishMatch(matchId, "A");
       if (action === "finishB") await finishMatch(matchId, "B");
+      if (action === "void") await voidMatch(matchId);
       if (action === "correctA") await correctWinner(matchId, "A");
       if (action === "correctB") await correctWinner(matchId, "B");
     });

@@ -509,6 +509,48 @@ async function handleRequest(request, env) {
     return json({ ok: true, data: { matchId, status: "finished", winnerTeam } });
   }
 
+  const voidMatch = pathname.match(/^\/api\/admin\/matches\/(\d+)\/void$/);
+  if (voidMatch && request.method === "POST") {
+    await requireAuth(request, env, ["admin"]);
+    const matchId = Number(voidMatch[1]);
+    const match = await getMatchById(env, matchId);
+    if (!match) return notFound("对局不存在");
+    if (!["locked", "in_game"].includes(match.status)) {
+      return badRequest(`当前对局状态 ${match.status} 不能流局`);
+    }
+
+    const participants = await env.DB.prepare(
+      "SELECT mp.player_id as db_player_id FROM match_players mp WHERE mp.match_id=?"
+    )
+      .bind(matchId)
+      .all();
+    if ((participants.results || []).length !== 10) {
+      return badRequest("对局参与人数不是10，无法流局");
+    }
+
+    const now = nowIso();
+    const statements = [
+      env.DB.prepare("UPDATE matches SET status='cancelled', ended_at=?, winner_team=NULL WHERE id=?").bind(now, matchId),
+      env.DB.prepare("UPDATE players SET status='idle', current_match_id=NULL, updated_at=? WHERE current_match_id=?").bind(now, matchId),
+      env.DB.prepare("UPDATE queue_entries SET state='cancelled', cancelled_at=? WHERE match_id=? AND state IN ('locked', 'matched')").bind(now, matchId),
+      env.DB.prepare("UPDATE match_players SET result=NULL WHERE match_id=?").bind(matchId),
+    ];
+
+    const cycleId = Number(match.cycle_id || 0);
+    if (cycleId > 0) {
+      for (const row of participants.results || []) {
+        statements.push(
+          env.DB.prepare(
+            "UPDATE player_cycle_stats SET assigned_games=MAX(0, assigned_games-1) WHERE cycle_id=? AND player_id=?"
+          ).bind(cycleId, row.db_player_id)
+        );
+      }
+    }
+
+    await env.DB.batch(statements);
+    return json({ ok: true, data: { matchId, status: "cancelled", flowGame: true } });
+  }
+
   const correctWinner = pathname.match(/^\/api\/admin\/matches\/(\d+)\/correct-winner$/);
   if (correctWinner && request.method === "POST") {
     await requireAuth(request, env, ["admin"]);

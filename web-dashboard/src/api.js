@@ -143,6 +143,13 @@ export const api = {
       body: JSON.stringify({ winnerTeam }),
     });
   },
+  voidMatch(matchId) {
+    return request(`/api/admin/matches/${matchId}/void`, {
+      method: "POST",
+      role: "admin",
+      body: JSON.stringify({}),
+    });
+  },
   correctMatchWinner(matchId, winnerTeam) {
     return request(`/api/admin/matches/${matchId}/correct-winner`, {
       method: "POST",
