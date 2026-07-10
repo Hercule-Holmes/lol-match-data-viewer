@@ -1,10 +1,9 @@
 import { getToken } from "./auth.js";
 
-const DEFAULT_API_BASE_URL = "https://lol-match-dashboard-api.1693402463.workers.dev";
 const isLocalRuntime =
   typeof window !== "undefined" &&
   (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost");
-const API_BASE_URL = isLocalRuntime ? "http://127.0.0.1:8787" : DEFAULT_API_BASE_URL;
+const API_BASE_URL = isLocalRuntime ? "http://127.0.0.1:8787" : "";
 
 async function request(path, options = {}) {
   const headers = new Headers(options.headers || {});
