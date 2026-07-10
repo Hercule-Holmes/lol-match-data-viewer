@@ -110,12 +110,14 @@ async function handleRequest(request, env) {
     const session = await requireAuth(request, env, ["player"]);
     const player = await getPlayerByDbId(env, session.playerDbId);
     if (!player) return unauthorized("玩家会话无效");
+    const matchInfo = await getPlayerMatchInfo(env, player);
 
     return json({
       ok: true,
       data: {
         player: sanitizePlayer(player),
         actions: getPlayerActions(player.status),
+        matchInfo,
       },
     });
   }
@@ -1140,6 +1142,44 @@ async function hasColumn(env, tableName, columnName) {
 
 async function getMatchById(env, matchId) {
   return env.DB.prepare("SELECT * FROM matches WHERE id=?").bind(matchId).first();
+}
+
+async function getPlayerMatchInfo(env, player) {
+  const matchId = Number(player?.current_match_id || 0);
+  if (!matchId) return null;
+  const match = await getMatchById(env, matchId);
+  if (!match) return null;
+
+  const rows = await env.DB.prepare(
+    `SELECT mp.team, p.id AS db_player_id, p.player_id
+     FROM match_players mp
+     JOIN players p ON p.id=mp.player_id
+     WHERE mp.match_id=?
+     ORDER BY mp.team ASC, p.player_id ASC`
+  )
+    .bind(matchId)
+    .all();
+
+  const teamAPlayers = [];
+  const teamBPlayers = [];
+  let selfTeam = null;
+  for (const row of rows.results || []) {
+    if (row.team === "A") teamAPlayers.push(row.player_id);
+    if (row.team === "B") teamBPlayers.push(row.player_id);
+    if (Number(row.db_player_id) === Number(player.id)) selfTeam = row.team;
+  }
+
+  return {
+    matchId,
+    status: match.status,
+    winnerTeam: match.winner_team || null,
+    selfTeam,
+    teamAPlayers,
+    teamBPlayers,
+    createdAt: match.created_at || null,
+    startedAt: match.started_at || null,
+    endedAt: match.ended_at || null,
+  };
 }
 
 async function createSession(env, session) {

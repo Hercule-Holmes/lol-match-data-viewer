@@ -19,7 +19,6 @@
     <section id="login-panel" class="panel">
       <div class="row">
         <input id="player-id" placeholder="输入你的选手ID" maxlength="32">
-        <input id="display-name" placeholder="显示名称（可选）" maxlength="32">
         <button id="btn-login">登录</button>
       </div>
       <div class="notice">当前方案为可用性测试：仅ID登录，后续可升级PIN码。</div>
@@ -58,6 +57,7 @@
       </div>
 
       <div class="notice">当后台发布匹配结果后，你将进入锁定状态，无法取消匹配。</div>
+      <div id="match-info" class="panel hidden" style="margin-top:12px;"></div>
     </section>
   </main>
 

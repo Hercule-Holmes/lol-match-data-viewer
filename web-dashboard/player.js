@@ -5,7 +5,6 @@ const els = {
   loginPanel: document.getElementById("login-panel"),
   playerPanel: document.getElementById("player-panel"),
   playerId: document.getElementById("player-id"),
-  displayName: document.getElementById("display-name"),
   btnLogin: document.getElementById("btn-login"),
   btnStart: document.getElementById("btn-start"),
   btnCancel: document.getElementById("btn-cancel"),
@@ -16,6 +15,7 @@ const els = {
   kpiTotal: document.getElementById("kpi-total"),
   kpiLosses: document.getElementById("kpi-losses"),
   kpiRate: document.getElementById("kpi-rate"),
+  matchInfo: document.getElementById("match-info"),
 };
 
 let pollTimer = null;
@@ -41,12 +41,11 @@ async function bootstrap() {
 
 async function login() {
   const playerId = els.playerId.value.trim();
-  const displayName = els.displayName.value.trim();
   if (!playerId) return showError("请输入选手ID");
 
   try {
     disable(els.btnLogin, true);
-    const data = await api.playerLogin(playerId, displayName || playerId);
+    const data = await api.playerLogin(playerId, playerId);
     setSession({
       token: data.token,
       role: data.role,
@@ -88,7 +87,7 @@ async function cancelQueue() {
 async function refreshMe() {
   try {
     const data = await api.me();
-    renderPlayer(data.player, data.actions);
+    renderPlayer(data.player, data.actions, data.matchInfo);
   } catch (error) {
     clearSession("player");
     stopPolling();
@@ -122,7 +121,7 @@ function stopPolling() {
   }
 }
 
-function renderPlayer(player, actions) {
+function renderPlayer(player, actions, matchInfo = null) {
   showPlayerPanel();
   els.welcome.textContent = `${player.displayName}（${player.playerId}）`;
   els.statusLine.innerHTML = `当前状态：<span class="tag tag-${player.status}">${formatStatus(player.status)}</span>`;
@@ -133,6 +132,7 @@ function renderPlayer(player, actions) {
 
   disable(els.btnStart, !actions.canStartQueue);
   disable(els.btnCancel, !actions.canCancelQueue);
+  renderMatchInfo(matchInfo);
 }
 
 function showLoginPanel() {
@@ -143,6 +143,24 @@ function showLoginPanel() {
 function showPlayerPanel() {
   els.loginPanel.classList.add("hidden");
   els.playerPanel.classList.remove("hidden");
+}
+
+function renderMatchInfo(matchInfo) {
+  if (!matchInfo || !["locked", "in_game"].includes(matchInfo.status)) {
+    els.matchInfo.classList.add("hidden");
+    els.matchInfo.innerHTML = "";
+    return;
+  }
+  const teamA = (matchInfo.teamAPlayers || []).join("、") || "-";
+  const teamB = (matchInfo.teamBPlayers || []).join("、") || "-";
+  const selfTeam = matchInfo.selfTeam === "A" ? "A队" : matchInfo.selfTeam === "B" ? "B队" : "-";
+  els.matchInfo.classList.remove("hidden");
+  els.matchInfo.innerHTML = `
+    <div class="title" style="font-size:16px;">当前对局信息</div>
+    <div class="notice">场次 #${matchInfo.matchId}｜状态：${formatStatus(matchInfo.status)}｜你所在队伍：${selfTeam}</div>
+    <div class="notice">A队：${teamA}</div>
+    <div class="notice">B队：${teamB}</div>
+  `;
 }
 
 function formatStatus(status) {
