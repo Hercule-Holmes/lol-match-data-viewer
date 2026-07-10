@@ -493,9 +493,10 @@ async function handleRequest(request, env) {
       );
       statements.push(
         env.DB.prepare(
-          "UPDATE players SET status='idle', current_match_id=NULL, wins=wins+?, total_games=total_games+1, updated_at=? WHERE id=?"
-        ).bind(win, now, row.db_player_id)
+          "UPDATE players SET status='queueing', current_match_id=NULL, wins=wins+?, total_games=total_games+1, updated_at=?, last_seen_at=? WHERE id=?"
+        ).bind(win, now, now, row.db_player_id)
       );
+      statements.push(await insertQueueEntryStmt(env, row.db_player_id, now));
       if (cycleId > 0) {
         statements.push(
           env.DB.prepare(
