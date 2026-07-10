@@ -77,7 +77,10 @@ GitHub Actions 已提供 `deploy-web-dashboard-worker.yml`：
 - `GET /api/admin/dashboard`
 - `GET /api/admin/queue`
 - `POST /api/admin/matches/publish`
-- `POST /api/admin/matches/random-publish`
+- `POST /api/admin/matchmaking/config`
+- `POST /api/admin/matchmaking/generate`
+- `GET /api/admin/matchmaking/overview`
+- `POST /api/admin/matchmaking/reset`
 - `POST /api/admin/matches/:id/start`
 - `POST /api/admin/matches/:id/finish`
 - `GET /api/public/board`

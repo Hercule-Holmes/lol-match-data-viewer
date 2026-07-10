@@ -35,6 +35,42 @@
       </section>
 
       <section class="panel">
+        <div class="row" style="justify-content: space-between;">
+          <div class="title" style="font-size:18px;">匹配算法配置</div>
+          <button id="btn-refresh-overview" class="secondary">刷新均衡概览</button>
+        </div>
+        <div class="notice">参数说明：Y=每位选手本轮目标场次；胜率容差=两队平均胜率允许差值（0.1=10%）；最大尝试次数=每场分队随机+微调的上限轮数。</div>
+        <div class="row">
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <label for="cfg-target-games" style="font-size:12px;color:#9aa3ba;">目标场次 Y（每人目标）</label>
+            <input id="cfg-target-games" style="min-width:220px;" placeholder="默认10">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <label for="cfg-winrate-tolerance" style="font-size:12px;color:#9aa3ba;">胜率容差（0~0.5，0.1=10%）</label>
+            <input id="cfg-winrate-tolerance" style="min-width:260px;" placeholder="默认0.1">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <label for="cfg-max-tries" style="font-size:12px;color:#9aa3ba;">最大尝试次数（分队迭代）</label>
+            <input id="cfg-max-tries" style="min-width:220px;" placeholder="默认60">
+          </div>
+          <button id="btn-save-config" class="ok">保存配置</button>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <input id="cfg-generate-max-matches" style="min-width:220px;" placeholder="本次最多生成场次（可选）">
+          <button id="btn-generate-matches" class="ok">按缺口优先批量生成</button>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <label style="display:flex;gap:6px;align-items:center;font-size:13px;color:#8e95aa;">
+            <input id="reset-player-totals" type="checkbox">
+            同时重置选手总战绩（wins/totalGames）
+          </label>
+          <button id="btn-reset-cycle" class="warn">重置赛程并重新开始</button>
+        </div>
+        <div class="notice">逻辑：先按缺口（Y-assigned）优先选10人，再进行随机分队与胜率容差微调。</div>
+        <div id="matchmaking-overview-wrap"></div>
+      </section>
+
+      <section class="panel">
         <div class="title" style="font-size:18px;">Excel 录入选手</div>
         <div class="notice">支持直接粘贴 Excel 内容（推荐列：playerId、displayName、wins、totalGames、status）。status 可填：idle/queueing/空闲/匹配中。</div>
         <textarea id="players-import-text" style="width:100%;min-height:140px;margin-top:8px;background:#0c0d12;color:#eceef5;border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:10px;" placeholder="示例：&#10;player001\t小明\t3\t5\tqueueing&#10;player002\t小红\t1\t2\tidle"></textarea>
@@ -63,11 +99,7 @@
           <input id="team-b" style="min-width:360px;" placeholder="B队 playerId，逗号分隔（5人）">
           <button id="btn-publish">发布对局（锁定）</button>
         </div>
-        <div class="row" style="margin-top:10px;">
-          <input id="max-matches" style="min-width:180px;" placeholder="随机生成场次数（可选）">
-          <button id="btn-random-publish" class="ok">按匹配池随机批量分组</button>
-        </div>
-        <div class="notice">将按当前匹配池随机分组，每 10 人生成 1 场（A/B 各 5 人），支持同时多场。</div>
+        <div class="notice">仅支持发布匹配池（状态为“匹配中”）内的选手，空闲选手不会加入匹配池。</div>
         <div id="action-message" class="notice"></div>
       </section>
 
@@ -77,7 +109,14 @@
       </section>
 
       <section class="panel">
-        <div class="title" style="font-size:18px;">选手战绩</div>
+        <div class="row" style="justify-content:space-between;">
+          <div class="title" style="font-size:18px;">选手战绩</div>
+          <div class="row">
+            <button id="btn-set-all-idle" class="secondary">全部设为空闲</button>
+            <button id="btn-set-all-queueing" class="ok">全部设为匹配中</button>
+          </div>
+        </div>
+        <div class="notice">快捷批量操作仅影响空闲/匹配中选手；已锁定/比赛中的选手会被跳过。</div>
         <div id="player-wrap"></div>
       </section>
     </section>

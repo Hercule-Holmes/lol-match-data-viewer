@@ -1,11 +1,10 @@
 import { getToken } from "./auth.js";
 
 const DEFAULT_API_BASE_URL = "https://lol-match-dashboard-api.1693402463.workers.dev";
-const API_BASE_URL =
+const isLocalRuntime =
   typeof window !== "undefined" &&
-  (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost")
-    ? ""
-    : DEFAULT_API_BASE_URL;
+  (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost");
+const API_BASE_URL = isLocalRuntime ? "http://127.0.0.1:8787" : DEFAULT_API_BASE_URL;
 
 async function request(path, options = {}) {
   const headers = new Headers(options.headers || {});
@@ -75,15 +74,42 @@ export const api = {
       body: JSON.stringify({ teamA, teamB }),
     });
   },
-  randomPublishMatches(maxMatches) {
-    return request("/api/admin/matches/random-publish", {
+  updateMatchmakingConfig(payload) {
+    return request("/api/admin/matchmaking/config", {
+      method: "POST",
+      role: "admin",
+      body: JSON.stringify(payload || {}),
+    });
+  },
+  generateMatchmakingMatches(maxMatches) {
+    return request("/api/admin/matchmaking/generate", {
       method: "POST",
       role: "admin",
       body: JSON.stringify({ maxMatches }),
     });
   },
+  getMatchmakingOverview() {
+    return request("/api/admin/matchmaking/overview", {
+      method: "GET",
+      role: "admin",
+    });
+  },
+  resetMatchmakingCycle(resetPlayerTotals) {
+    return request("/api/admin/matchmaking/reset", {
+      method: "POST",
+      role: "admin",
+      body: JSON.stringify({ resetPlayerTotals }),
+    });
+  },
   setPlayerStatus(playerId, status) {
     return request(`/api/admin/players/${encodeURIComponent(playerId)}/status`, {
+      method: "POST",
+      role: "admin",
+      body: JSON.stringify({ status }),
+    });
+  },
+  setAllPlayersStatus(status) {
+    return request("/api/admin/players/status-all", {
       method: "POST",
       role: "admin",
       body: JSON.stringify({ status }),

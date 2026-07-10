@@ -1,3 +1,5 @@
+import { selectPlayersByGap, splitTeamsWithWinrateTuning } from "./matchmaking-core.js";
+
 export default {
   async fetch(request, env) {
     try {
@@ -36,6 +38,7 @@ async function handleRequest(request, env) {
   }
 
   await ensureSeedPlayers(env);
+  await ensureMatchmakingBootstrap(env);
 
   if (pathname === "/api/public/board" && request.method === "GET") {
     const board = await buildBoard(env);
@@ -81,7 +84,7 @@ async function handleRequest(request, env) {
     const validByHash = expectedHash && timingSafeEqual(passHash, expectedHash);
     const validByRaw = expectedRaw && timingSafeEqual(password, expectedRaw);
     // 临时开发模式：未配置密钥时，仅要求密码为 123456（用户名可忽略）
-    const isTempDevLogin = !expectedHash && !expectedRaw && timingSafeEqual(password, "123456");
+    const isTempDevLogin = !expectedHash && !expectedRaw && timingSafeEqual(password, "dongtian123456");
     const isValid = (username === expectedUser && (validByHash || validByRaw)) || isTempDevLogin;
     if (!isValid) return unauthorized("后台账号或密码错误");
 
@@ -179,6 +182,37 @@ async function handleRequest(request, env) {
     return json({ ok: true, data: { queue } });
   }
 
+  if (pathname === "/api/admin/matchmaking/config" && request.method === "POST") {
+    await requireAuth(request, env, ["admin"]);
+    const payload = await readJsonBody(request);
+    const targetGamesPerPlayer = clampInt(payload.targetGamesPerPlayer, 1, 200, 10);
+    const winrateTolerance = clampFloat(payload.winrateTolerance, 0, 0.5, 0.1);
+    const maxShuffleTries = clampInt(payload.maxShuffleTries, 1, 500, 60);
+    const activeCycle = await ensureActiveCycle(env, targetGamesPerPlayer);
+    await env.DB.batch([
+      env.DB.prepare("UPDATE match_cycles SET target_games=? WHERE id=?").bind(targetGamesPerPlayer, activeCycle.id),
+      env.DB.prepare(
+        "INSERT INTO matchmaking_configs (id, winrate_tolerance, max_shuffle_tries, updated_at) VALUES (1, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET winrate_tolerance=excluded.winrate_tolerance, max_shuffle_tries=excluded.max_shuffle_tries, updated_at=excluded.updated_at"
+      ).bind(winrateTolerance, maxShuffleTries, nowIso()),
+    ]);
+    const config = await getMatchmakingConfig(env);
+    return json({ ok: true, data: config });
+  }
+
+  if (pathname === "/api/admin/matchmaking/overview" && request.method === "GET") {
+    await requireAuth(request, env, ["admin"]);
+    const overview = await getMatchmakingOverview(env);
+    return json({ ok: true, data: overview });
+  }
+
+  if (pathname === "/api/admin/matchmaking/reset" && request.method === "POST") {
+    await requireAuth(request, env, ["admin"]);
+    const payload = await readJsonBody(request);
+    const resetPlayerTotals = !!payload.resetPlayerTotals;
+    const result = await resetMatchmakingCycle(env, { resetPlayerTotals });
+    return json({ ok: true, data: result });
+  }
+
   const setPlayerStatus = pathname.match(/^\/api\/admin\/players\/([^/]+)\/status$/);
   if (setPlayerStatus && request.method === "POST") {
     await requireAuth(request, env, ["admin"]);
@@ -213,6 +247,49 @@ async function handleRequest(request, env) {
     return json({ ok: true, data: { player: sanitizePlayer(next) } });
   }
 
+  if (pathname === "/api/admin/players/status-all" && request.method === "POST") {
+    await requireAuth(request, env, ["admin"]);
+    const payload = await readJsonBody(request);
+    const status = safeText(payload.status);
+    if (!["idle", "queueing"].includes(status)) {
+      return badRequest("仅支持设置为 idle 或 queueing");
+    }
+    const now = nowIso();
+    const updatable = await env.DB.prepare(
+      "SELECT id, status FROM players WHERE status IN ('idle', 'queueing') ORDER BY id ASC"
+    ).all();
+    const updatableRows = updatable.results || [];
+    const idleCount = updatableRows.filter((x) => x.status === "idle").length;
+    const queueingCount = updatableRows.filter((x) => x.status === "queueing").length;
+    const skippedRes = await env.DB.prepare(
+      "SELECT COUNT(*) AS c FROM players WHERE status IN ('locked', 'in_game')"
+    ).first();
+    const skippedCount = Number(skippedRes?.c || 0);
+
+    if (status === "idle") {
+      await env.DB.batch([
+        env.DB.prepare(
+          "UPDATE players SET status='idle', current_match_id=NULL, updated_at=?, last_seen_at=? WHERE status IN ('idle', 'queueing')"
+        ).bind(now, now),
+        env.DB.prepare("UPDATE queue_entries SET state='cancelled', cancelled_at=? WHERE state='queueing'").bind(now),
+      ]);
+      return json({ ok: true, data: { targetStatus: status, updatedCount: queueingCount, skippedCount } });
+    }
+
+    const statements = [
+      env.DB.prepare(
+        "UPDATE players SET status='queueing', current_match_id=NULL, updated_at=?, last_seen_at=? WHERE status='idle'"
+      ).bind(now, now),
+    ];
+    for (const row of updatableRows) {
+      if (row.status === "idle") {
+        statements.push(await insertQueueEntryStmt(env, row.id, now));
+      }
+    }
+    await env.DB.batch(statements);
+    return json({ ok: true, data: { targetStatus: status, updatedCount: idleCount, skippedCount } });
+  }
+
   const deletePlayer = pathname.match(/^\/api\/admin\/players\/([^/]+)\/delete$/);
   if (deletePlayer && request.method === "POST") {
     await requireAuth(request, env, ["admin"]);
@@ -232,6 +309,7 @@ async function handleRequest(request, env) {
 
     await env.DB.batch([
       env.DB.prepare("DELETE FROM queue_entries WHERE player_id=?").bind(player.id),
+      env.DB.prepare("DELETE FROM player_cycle_stats WHERE player_id=?").bind(player.id),
       env.DB.prepare("DELETE FROM players WHERE id=?").bind(player.id),
     ]);
     return json({ ok: true, data: { deleted: true, playerId } });
@@ -250,6 +328,8 @@ async function handleRequest(request, env) {
         env.DB.prepare("DELETE FROM queue_entries"),
         env.DB.prepare("DELETE FROM match_players"),
         env.DB.prepare("DELETE FROM matches"),
+        env.DB.prepare("DELETE FROM player_cycle_stats"),
+        env.DB.prepare("DELETE FROM match_cycles"),
         env.DB.prepare("DELETE FROM players"),
       ]);
     }
@@ -285,6 +365,7 @@ async function handleRequest(request, env) {
         if (status === "queueing") {
           await (await insertQueueEntryStmt(env, existing.id, now)).run();
         }
+        await ensurePlayerCycleStatsForPlayer(env, existing.id);
       } else {
         insertedCount += 1;
         const inserted = await env.DB.prepare(
@@ -296,6 +377,7 @@ async function handleRequest(request, env) {
         if (status === "queueing") {
           await (await insertQueueEntryStmt(env, inserted.meta.last_row_id, now)).run();
         }
+        await ensurePlayerCycleStatsForPlayer(env, inserted.meta.last_row_id);
       }
     }
 
@@ -327,57 +409,25 @@ async function handleRequest(request, env) {
         return badRequest(`选手 ${p.player_id} 当前状态为 ${p.status}，不能发布匹配`);
       }
     }
+    const queueSet = await getActiveQueuePlayerIdSet(env);
+    for (const pid of allIds) {
+      if (!queueSet.has(pid)) {
+        return badRequest(`选手 ${pid} 不在匹配池中，不能发布匹配`);
+      }
+    }
 
-    const matchId = await createLockedMatch(env, session.playerId, teamAIds, teamBIds, players);
+    const activeCycle = await ensureActiveCycle(env);
+    const matchId = await createLockedMatch(env, session.playerId, teamAIds, teamBIds, players, { cycleId: activeCycle.id });
     return json({ ok: true, data: { matchId } });
   }
 
-  if (pathname === "/api/admin/matches/random-publish" && request.method === "POST") {
+  if (pathname === "/api/admin/matchmaking/generate" && request.method === "POST") {
     const session = await requireAuth(request, env, ["admin"]);
     const payload = await readJsonBody(request);
-    const maxMatchesRaw = Number(payload.maxMatches || 9999);
+    const maxMatchesRaw = Number(payload.maxMatches || payload.batchMatchesPerRun || 9999);
     const maxMatches = Number.isFinite(maxMatchesRaw) && maxMatchesRaw > 0 ? Math.floor(maxMatchesRaw) : 9999;
-
-    const queue = await getQueuePlayers(env);
-    const queueIds = queue.map((x) => x.playerId);
-    if (queueIds.length < 10) {
-      return json({
-        ok: true,
-        data: { createdMatchIds: [], consumedPlayers: 0, remainingQueuePlayers: queueIds.length },
-      });
-    }
-
-    const randomized = shuffleArray(queueIds);
-    const groups = [];
-    const possibleMatches = Math.floor(randomized.length / 10);
-    const matchCount = Math.min(possibleMatches, maxMatches);
-    for (let i = 0; i < matchCount; i += 1) {
-      groups.push(randomized.slice(i * 10, i * 10 + 10));
-    }
-
-    const createdMatchIds = [];
-    for (const group of groups) {
-      const teamSeed = shuffleArray([...group]);
-      const teamA = teamSeed.slice(0, 5);
-      const teamB = teamSeed.slice(5, 10);
-      const players = await getPlayersByPlayerIds(env, [...teamA, ...teamB]);
-      if (players.length !== 10) continue;
-      const canPublish = players.every((p) => p.status === "queueing");
-      if (!canPublish) continue;
-
-      const matchId = await createLockedMatch(env, session.playerId, teamA, teamB, players);
-      createdMatchIds.push(matchId);
-    }
-
-    const queueAfter = await getQueuePlayers(env);
-    return json({
-      ok: true,
-      data: {
-        createdMatchIds,
-        consumedPlayers: createdMatchIds.length * 10,
-        remainingQueuePlayers: queueAfter.length,
-      },
-    });
+    const generated = await generateMatchesByGap(env, session.playerId, { maxMatches });
+    return json({ ok: true, data: generated });
   }
 
   const startMatch = pathname.match(/^\/api\/admin\/matches\/(\d+)\/start$/);
@@ -428,6 +478,7 @@ async function handleRequest(request, env) {
         matchId
       ),
     ];
+    const cycleId = Number(match.cycle_id || 0);
 
     for (const row of participants.results) {
       const win = row.team === winnerTeam ? 1 : 0;
@@ -445,6 +496,13 @@ async function handleRequest(request, env) {
           "UPDATE players SET status='idle', current_match_id=NULL, wins=wins+?, total_games=total_games+1, updated_at=? WHERE id=?"
         ).bind(win, now, row.db_player_id)
       );
+      if (cycleId > 0) {
+        statements.push(
+          env.DB.prepare(
+            "UPDATE player_cycle_stats SET finished_games=finished_games+1 WHERE cycle_id=? AND player_id=?"
+          ).bind(cycleId, row.db_player_id)
+        );
+      }
     }
 
     await env.DB.batch(statements);
@@ -595,7 +653,236 @@ async function ensureSeedPlayers(env) {
   await env.DB.batch(queueStatements);
 }
 
+async function ensureMatchmakingBootstrap(env) {
+  await assertMatchmakingSchemaReady(env);
+
+  const activeCycle = await ensureActiveCycle(env);
+  await env.DB.prepare(
+    "INSERT INTO matchmaking_configs (id, winrate_tolerance, max_shuffle_tries, updated_at) VALUES (1, 0.10, 60, ?) ON CONFLICT(id) DO NOTHING"
+  ).bind(nowIso()).run();
+
+  const playersRes = await env.DB.prepare("SELECT id FROM players").all();
+  const statements = [];
+  for (const row of playersRes.results || []) {
+    statements.push(
+      env.DB.prepare(
+        "INSERT INTO player_cycle_stats (cycle_id, player_id, assigned_games, finished_games) VALUES (?, ?, 0, 0) ON CONFLICT(cycle_id, player_id) DO NOTHING"
+      ).bind(activeCycle.id, row.id)
+    );
+  }
+  if (statements.length) await env.DB.batch(statements);
+}
+
+async function assertMatchmakingSchemaReady(env) {
+  const requiredTables = ["match_cycles", "player_cycle_stats", "matchmaking_configs"];
+  for (const tableName of requiredTables) {
+    const row = await env.DB.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
+    ).bind(tableName).first();
+    if (!row?.name) {
+      throw httpError(
+        500,
+        "SCHEMA_NOT_READY",
+        `数据库缺少表 ${tableName}，请先执行 schema.sql 迁移（wrangler d1 execute ... --file ./schema.sql）`
+      );
+    }
+  }
+
+  const hasCycleColumn = await hasColumn(env, "matches", "cycle_id");
+  if (!hasCycleColumn) {
+    throw httpError(
+      500,
+      "SCHEMA_NOT_READY",
+      "数据库缺少 matches.cycle_id 字段，请先执行 schema.sql 迁移（wrangler d1 execute ... --file ./schema.sql）"
+    );
+  }
+}
+
+async function ensureActiveCycle(env, preferredTargetGames = 10) {
+  const active = await env.DB.prepare("SELECT * FROM match_cycles WHERE status='active' ORDER BY id DESC LIMIT 1").first();
+  if (active) return active;
+  const now = nowIso();
+  const targetGames = clampInt(preferredTargetGames, 1, 200, 10);
+  const cycleName = `赛程-${now.slice(0, 10)}`;
+  const inserted = await env.DB.prepare(
+    "INSERT INTO match_cycles (name, target_games, status, created_at) VALUES (?, ?, 'active', ?)"
+  ).bind(cycleName, targetGames, now).run();
+  return env.DB.prepare("SELECT * FROM match_cycles WHERE id=?").bind(inserted.meta.last_row_id).first();
+}
+
+async function ensurePlayerCycleStatsForPlayer(env, playerDbId) {
+  const activeCycle = await ensureActiveCycle(env);
+  await env.DB.prepare(
+    "INSERT INTO player_cycle_stats (cycle_id, player_id, assigned_games, finished_games) VALUES (?, ?, 0, 0) ON CONFLICT(cycle_id, player_id) DO NOTHING"
+  ).bind(activeCycle.id, playerDbId).run();
+}
+
+async function getMatchmakingConfig(env) {
+  const cycle = await ensureActiveCycle(env);
+  const row = await env.DB.prepare("SELECT * FROM matchmaking_configs WHERE id=1").first();
+  const winrateTolerance = clampFloat(row?.winrate_tolerance, 0, 0.5, 0.1);
+  const maxShuffleTries = clampInt(row?.max_shuffle_tries, 1, 500, 60);
+  return {
+    cycleId: cycle.id,
+    cycleName: cycle.name,
+    targetGamesPerPlayer: clampInt(cycle.target_games, 1, 200, 10),
+    winrateTolerance,
+    maxShuffleTries,
+  };
+}
+
+async function getMatchmakingOverview(env) {
+  const config = await getMatchmakingConfig(env);
+  const rows = await env.DB.prepare(
+    `SELECT p.player_id, p.display_name, p.wins, p.total_games, p.status, pcs.assigned_games, pcs.finished_games
+     FROM players p
+     LEFT JOIN player_cycle_stats pcs ON pcs.player_id=p.id AND pcs.cycle_id=?
+     ORDER BY p.player_id ASC`
+  ).bind(config.cycleId).all();
+
+  const players = (rows.results || []).map((row) => {
+    const assignedGames = Number(row.assigned_games || 0);
+    const finishedGames = Number(row.finished_games || 0);
+    return {
+      playerId: row.player_id,
+      displayName: row.display_name || row.player_id,
+      status: row.status,
+      wins: Number(row.wins || 0),
+      totalGames: Number(row.total_games || 0),
+      assignedGames,
+      finishedGames,
+      gap: config.targetGamesPerPlayer - assignedGames,
+    };
+  });
+
+  const sortedGap = [...players].sort((a, b) => b.gap - a.gap);
+  return {
+    config,
+    summary: {
+      playerCount: players.length,
+      maxGap: sortedGap.length ? sortedGap[0].gap : 0,
+      minGap: sortedGap.length ? sortedGap[sortedGap.length - 1].gap : 0,
+      avgGap: players.length
+        ? Number((players.reduce((acc, p) => acc + p.gap, 0) / players.length).toFixed(2))
+        : 0,
+    },
+    players: sortedGap,
+  };
+}
+
+async function resetMatchmakingCycle(env, options = {}) {
+  const resetPlayerTotals = !!options.resetPlayerTotals;
+  const config = await getMatchmakingConfig(env);
+  const now = nowIso();
+  const targetGames = config.targetGamesPerPlayer;
+
+  const oldMatchesRes = await env.DB.prepare("SELECT COUNT(*) AS c FROM matches").first();
+  const clearedMatches = Number(oldMatchesRes?.c || 0);
+
+  await env.DB.batch([
+    env.DB.prepare("UPDATE match_cycles SET status='closed' WHERE status='active'"),
+    env.DB.prepare("DELETE FROM queue_entries"),
+    env.DB.prepare("DELETE FROM match_players"),
+    env.DB.prepare("DELETE FROM matches"),
+    env.DB.prepare("DELETE FROM player_cycle_stats"),
+  ]);
+
+  const cycleName = `赛程-${now.slice(0, 10)}-${now.slice(11, 19).replaceAll(":", "")}`;
+  const insertedCycle = await env.DB.prepare(
+    "INSERT INTO match_cycles (name, target_games, status, created_at) VALUES (?, ?, 'active', ?)"
+  ).bind(cycleName, targetGames, now).run();
+  const newCycleId = Number(insertedCycle.meta.last_row_id);
+
+  const playerRows = await env.DB.prepare("SELECT id FROM players ORDER BY id ASC").all();
+  const playerIds = (playerRows.results || []).map((x) => x.id);
+  const statements = [];
+
+  for (const playerId of playerIds) {
+    statements.push(
+      env.DB.prepare(
+        "INSERT INTO player_cycle_stats (cycle_id, player_id, assigned_games, finished_games) VALUES (?, ?, 0, 0)"
+      ).bind(newCycleId, playerId)
+    );
+  }
+
+  if (resetPlayerTotals) {
+    statements.push(
+      env.DB.prepare(
+        "UPDATE players SET status='idle', current_match_id=NULL, wins=0, total_games=0, updated_at=?, last_seen_at=?"
+      ).bind(now, now)
+    );
+  } else {
+    statements.push(
+      env.DB.prepare(
+        "UPDATE players SET status='idle', current_match_id=NULL, updated_at=?, last_seen_at=?"
+      ).bind(now, now)
+    );
+  }
+
+  if (statements.length) await env.DB.batch(statements);
+  return {
+    newCycleId,
+    targetGamesPerPlayer: targetGames,
+    resetPlayerTotals,
+    clearedMatches,
+  };
+}
+
+async function generateMatchesByGap(env, createdBy, options = {}) {
+  const config = await getMatchmakingConfig(env);
+  const maxMatches = clampInt(options.maxMatches, 1, 9999, 9999);
+  const queueRes = await env.DB.prepare(
+    `SELECT p.id, p.player_id, p.display_name, p.wins, p.total_games, p.status, pcs.assigned_games
+     FROM players p
+     JOIN queue_entries q ON q.player_id=p.id
+     LEFT JOIN player_cycle_stats pcs ON pcs.player_id=p.id AND pcs.cycle_id=?
+     WHERE p.status='queueing' AND q.state='queueing'
+     ORDER BY q.id ASC`
+  ).bind(config.cycleId).all();
+
+  const unique = new Map();
+  for (const row of queueRes.results || []) {
+    if (!unique.has(row.id)) unique.set(row.id, row);
+  }
+  let pool = [...unique.values()];
+  const createdMatchIds = [];
+  const matchDeltas = [];
+
+  while (pool.length >= 10 && createdMatchIds.length < maxMatches) {
+    const selected = selectPlayersByGap(pool, config.targetGamesPerPlayer, 10);
+    const selectedIds = new Set(selected.map((p) => p.id));
+    const split = splitTeamsWithWinrateTuning(selected, {
+      tolerancePercent: config.winrateTolerance * 100,
+      maxShuffleTries: config.maxShuffleTries,
+      fallbackWinRatePercent: computeGlobalAverageWinratePercent(pool),
+    });
+    const teamA = split.teamA;
+    const teamB = split.teamB;
+    const players = await getPlayersByPlayerIds(env, [...teamA, ...teamB]);
+    if (players.length !== 10 || !players.every((p) => p.status === "queueing")) {
+      pool = pool.filter((p) => !selectedIds.has(p.id));
+      continue;
+    }
+
+    const matchId = await createLockedMatch(env, createdBy, teamA, teamB, players, { cycleId: config.cycleId });
+    createdMatchIds.push(matchId);
+    matchDeltas.push(Number(split.delta.toFixed(2)));
+    pool = pool.filter((p) => !selectedIds.has(p.id));
+  }
+
+  return {
+    createdMatchIds,
+    consumedPlayers: createdMatchIds.length * 10,
+    remainingQueuePlayers: pool.length,
+    averageWinrateDelta: matchDeltas.length
+      ? Number((matchDeltas.reduce((acc, x) => acc + x, 0) / matchDeltas.length).toFixed(2))
+      : 0,
+    targetWinrateTolerancePercent: Number((config.winrateTolerance * 100).toFixed(2)),
+  };
+}
+
 async function getAdminDashboard(env) {
+  const matchmaking = await getMatchmakingOverview(env);
   const playersRes = await env.DB.prepare(
     "SELECT id, player_id, display_name, status, wins, total_games, current_match_id, updated_at, last_seen_at FROM players ORDER BY status ASC, player_id ASC"
   ).all();
@@ -637,6 +924,7 @@ async function getAdminDashboard(env) {
     queue,
     matches: enrichedMatches,
     players,
+    matchmaking,
     updatedAt: nowIso(),
   };
 }
@@ -653,6 +941,11 @@ async function getQueuePlayers(env) {
     wins: row.wins,
     totalGames: row.total_games,
   }));
+}
+
+async function getActiveQueuePlayerIdSet(env) {
+  const queue = await getQueuePlayers(env);
+  return new Set(queue.map((x) => x.playerId));
 }
 
 async function getMatchTeamMap(env, matchIds) {
@@ -685,6 +978,7 @@ async function upsertPlayer(env, playerId, displayName) {
     await env.DB.prepare("UPDATE players SET display_name=?, updated_at=?, last_seen_at=? WHERE id=?")
       .bind(displayName || playerId, now, now, existing.id)
       .run();
+    await ensurePlayerCycleStatsForPlayer(env, existing.id);
     return getPlayerByDbId(env, existing.id);
   }
 
@@ -693,6 +987,7 @@ async function upsertPlayer(env, playerId, displayName) {
   )
     .bind(playerId, displayName || playerId, now, now, now)
     .run();
+  await ensurePlayerCycleStatsForPlayer(env, inserted.meta.last_row_id);
   return getPlayerByDbId(env, inserted.meta.last_row_id);
 }
 
@@ -710,13 +1005,21 @@ async function getPlayersByPlayerIds(env, playerIds) {
   return res.results || [];
 }
 
-async function createLockedMatch(env, createdBy, teamAIds, teamBIds, players) {
+async function createLockedMatch(env, createdBy, teamAIds, teamBIds, players, options = {}) {
   const now = nowIso();
-  const inserted = await env.DB.prepare(
-    "INSERT INTO matches (status, created_by, created_at) VALUES ('locked', ?, ?)"
-  )
-    .bind(createdBy, now)
-    .run();
+  const cycleId = Number(options.cycleId || 0);
+  const hasCycleColumn = await hasColumn(env, "matches", "cycle_id");
+  const inserted = hasCycleColumn
+    ? await env.DB.prepare(
+      "INSERT INTO matches (status, cycle_id, created_by, created_at) VALUES ('locked', ?, ?, ?)"
+    )
+      .bind(cycleId || null, createdBy, now)
+      .run()
+    : await env.DB.prepare(
+      "INSERT INTO matches (status, created_by, created_at) VALUES ('locked', ?, ?)"
+    )
+      .bind(createdBy, now)
+      .run();
   const matchId = inserted.meta.last_row_id;
   const playerByPid = new Map(players.map((p) => [p.player_id, p]));
   const statements = [];
@@ -738,6 +1041,13 @@ async function createLockedMatch(env, createdBy, teamAIds, teamBIds, players) {
         "UPDATE queue_entries SET state='locked', match_id=? WHERE id=(SELECT id FROM queue_entries WHERE player_id=? AND state='queueing' ORDER BY id DESC LIMIT 1)"
       ).bind(matchId, p.id)
     );
+    if (cycleId > 0) {
+      statements.push(
+        env.DB.prepare(
+          "UPDATE player_cycle_stats SET assigned_games=assigned_games+1 WHERE cycle_id=? AND player_id=?"
+        ).bind(cycleId, p.id)
+      );
+    }
   }
 
   for (const pid of teamBIds) {
@@ -757,6 +1067,13 @@ async function createLockedMatch(env, createdBy, teamAIds, teamBIds, players) {
         "UPDATE queue_entries SET state='locked', match_id=? WHERE id=(SELECT id FROM queue_entries WHERE player_id=? AND state='queueing' ORDER BY id DESC LIMIT 1)"
       ).bind(matchId, p.id)
     );
+    if (cycleId > 0) {
+      statements.push(
+        env.DB.prepare(
+          "UPDATE player_cycle_stats SET assigned_games=assigned_games+1 WHERE cycle_id=? AND player_id=?"
+        ).bind(cycleId, p.id)
+      );
+    }
   }
 
   await env.DB.batch(statements);
@@ -850,10 +1167,30 @@ function toNonNegativeInt(v) {
   return Math.floor(n);
 }
 
+function clampInt(value, min, max, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(n)));
+}
+
+function clampFloat(value, min, max, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
 function normalizeImportStatus(v) {
   const text = String(v || "").trim().toLowerCase();
   if (text === "queueing" || text === "匹配中") return "queueing";
   return "idle";
+}
+
+function computeGlobalAverageWinratePercent(players) {
+  if (!players.length) return 50;
+  const valid = players.filter((p) => Number(p.total_games || 0) > 0);
+  if (!valid.length) return 50;
+  const sum = valid.reduce((acc, p) => acc + Number(p.wins || 0) / Number(p.total_games || 1), 0);
+  return (sum / valid.length) * 100;
 }
 
 function nowIso() {
@@ -871,8 +1208,11 @@ function json(payload, status = 200) {
 
 function withCors(response) {
   response.headers.set("access-control-allow-origin", "*");
-  response.headers.set("access-control-allow-methods", "GET,POST,OPTIONS");
-  response.headers.set("access-control-allow-headers", "content-type,authorization");
+  response.headers.set("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+  response.headers.set("access-control-allow-headers", "*");
+  response.headers.set("access-control-max-age", "86400");
+  response.headers.set("access-control-expose-headers", "content-type");
+  response.headers.set("vary", "origin, access-control-request-method, access-control-request-headers");
   return response;
 }
 
@@ -938,10 +1278,3 @@ async function requireRateLimit(env, request, action) {
   await env.SESSIONS.put(key, JSON.stringify({ count, ts: now }), { expirationTtl: 60 });
 }
 
-function shuffleArray(arr) {
-  for (let i = arr.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}

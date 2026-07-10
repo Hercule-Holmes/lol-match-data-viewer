@@ -6,7 +6,8 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "d1:migrate": "wrangler d1 execute lol-match-dashboard --file ./schema.sql",
-    "d1:migrate:preview": "wrangler d1 execute lol-match-dashboard-preview --file ./schema.sql --env preview"
+    "d1:migrate:preview": "wrangler d1 execute lol-match-dashboard-preview --file ./schema.sql --env preview",
+    "test": "node --test src/matchmaking-core.test.js"
   },
   "devDependencies": {
     "wrangler": "^4.24.3"

@@ -132,6 +132,20 @@ table {
   border-collapse: collapse;
 }
 
+.table-scroll {
+  max-height: 460px;
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+}
+
+.table-scroll thead th {
+  position: sticky;
+  top: 0;
+  background: #0f121a;
+  z-index: 1;
+}
+
 th,
 td {
   padding: 8px 10px;

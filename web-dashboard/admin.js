@@ -10,21 +10,41 @@ const els = {
   btnLogout: document.getElementById("btn-logout"),
   btnRefreshQueue: document.getElementById("btn-refresh-queue"),
   btnPublish: document.getElementById("btn-publish"),
-  btnRandomPublish: document.getElementById("btn-random-publish"),
+  btnSaveConfig: document.getElementById("btn-save-config"),
+  btnGenerateMatches: document.getElementById("btn-generate-matches"),
+  btnResetCycle: document.getElementById("btn-reset-cycle"),
+  btnRefreshOverview: document.getElementById("btn-refresh-overview"),
   btnImportPlayers: document.getElementById("btn-import-players"),
+  btnSetAllIdle: document.getElementById("btn-set-all-idle"),
+  btnSetAllQueueing: document.getElementById("btn-set-all-queueing"),
   teamA: document.getElementById("team-a"),
   teamB: document.getElementById("team-b"),
-  maxMatches: document.getElementById("max-matches"),
+  cfgTargetGames: document.getElementById("cfg-target-games"),
+  cfgWinrateTolerance: document.getElementById("cfg-winrate-tolerance"),
+  cfgMaxTries: document.getElementById("cfg-max-tries"),
+  cfgGenerateMaxMatches: document.getElementById("cfg-generate-max-matches"),
+  resetPlayerTotals: document.getElementById("reset-player-totals"),
   playersImportText: document.getElementById("players-import-text"),
   importReplaceExisting: document.getElementById("import-replace-existing"),
   actionMessage: document.getElementById("action-message"),
   summaryGrid: document.getElementById("summary-grid"),
+  matchmakingOverviewWrap: document.getElementById("matchmaking-overview-wrap"),
   queueWrap: document.getElementById("queue-wrap"),
   matchWrap: document.getElementById("match-wrap"),
   playerWrap: document.getElementById("player-wrap"),
 };
 
 let pollTimer = null;
+let latestDashboardData = null;
+const POLL_INTERVAL_VISIBLE_MS = 10000;
+const listViewState = {
+  matchKeyword: "",
+  playerKeyword: "",
+  matchesPage: 1,
+  playersPage: 1,
+  matchesPageSize: 12,
+  playersPageSize: 20,
+};
 
 bindEvents();
 bootstrap().catch(showError);
@@ -34,8 +54,14 @@ function bindEvents() {
   els.btnLogout.addEventListener("click", logout);
   els.btnRefreshQueue.addEventListener("click", refreshDashboard);
   els.btnPublish.addEventListener("click", publishMatch);
-  els.btnRandomPublish.addEventListener("click", randomPublishMatches);
+  els.btnSaveConfig.addEventListener("click", saveMatchmakingConfig);
+  els.btnGenerateMatches.addEventListener("click", generateMatchesByGap);
+  els.btnResetCycle.addEventListener("click", resetMatchmakingCycle);
+  els.btnRefreshOverview.addEventListener("click", refreshMatchmakingOverview);
   els.btnImportPlayers.addEventListener("click", importPlayersFromExcel);
+  els.btnSetAllIdle.addEventListener("click", () => setAllPlayersStatus("idle"));
+  els.btnSetAllQueueing.addEventListener("click", () => setAllPlayersStatus("queueing"));
+  document.addEventListener("visibilitychange", handleVisibilityChange);
 }
 
 async function bootstrap() {
@@ -70,14 +96,90 @@ async function login() {
 async function refreshDashboard() {
   try {
     const data = await api.getDashboard();
+    latestDashboardData = data;
     renderSummary(data.summary);
     renderQueue(data.queue);
     renderMatches(data.matches);
     renderPlayers(data.players);
+    renderMatchmakingOverview(data.matchmaking);
   } catch (error) {
     if (error.status === 401 || error.status === 403) {
       await logout(false);
     }
+    showError(error.message);
+  }
+}
+
+async function saveMatchmakingConfig() {
+  const payload = {
+    targetGamesPerPlayer: toPositiveNumberOrUndefined(els.cfgTargetGames.value),
+    winrateTolerance: toNumberOrUndefined(els.cfgWinrateTolerance.value),
+    maxShuffleTries: toPositiveNumberOrUndefined(els.cfgMaxTries.value),
+  };
+  try {
+    disable(els.btnSaveConfig, true);
+    const data = await api.updateMatchmakingConfig(payload);
+    setActionMessage(
+      `已保存配置：Y=${data.targetGamesPerPlayer}，容差=${Number(data.winrateTolerance * 100).toFixed(
+        2
+      )}% ，尝试次数=${data.maxShuffleTries}`
+    );
+    fillConfigInputs(data);
+    await refreshMatchmakingOverview();
+  } catch (error) {
+    setActionMessage(`保存配置失败：${error.message}`);
+    showError(error.message);
+  } finally {
+    disable(els.btnSaveConfig, false);
+  }
+}
+
+async function generateMatchesByGap() {
+  const maxMatches = toPositiveNumberOrUndefined(els.cfgGenerateMaxMatches.value);
+  try {
+    disable(els.btnGenerateMatches, true);
+    setActionMessage("正在按缺口优先批量生成对局...");
+    const data = await api.generateMatchmakingMatches(maxMatches);
+    setActionMessage(
+      `均衡模式已生成 ${data.createdMatchIds.length} 场；消耗 ${data.consumedPlayers} 人；剩余 ${data.remainingQueuePlayers} 人；平均胜率差 ${data.averageWinrateDelta}%`
+    );
+    await refreshDashboard();
+  } catch (error) {
+    setActionMessage(`均衡生成失败：${error.message}`);
+    showError(error.message);
+  } finally {
+    disable(els.btnGenerateMatches, false);
+  }
+}
+
+async function resetMatchmakingCycle() {
+  const withTotals = !!els.resetPlayerTotals.checked;
+  const tip = withTotals
+    ? "将清空当前场次/队列，并重置所有选手总战绩，确认继续？"
+    : "将清空当前场次/队列并重置赛程统计，确认继续？";
+  const ok = window.confirm(tip);
+  if (!ok) return;
+  try {
+    disable(els.btnResetCycle, true);
+    const data = await api.resetMatchmakingCycle(withTotals);
+    setActionMessage(
+      `已重置并创建新赛程（ID: ${data.newCycleId}）；已清空 ${data.clearedMatches} 场对局；选手状态已恢复为空闲`
+    );
+    await refreshDashboard();
+  } catch (error) {
+    setActionMessage(`重置失败：${error.message}`);
+    showError(error.message);
+  } finally {
+    disable(els.btnResetCycle, false);
+  }
+}
+
+async function refreshMatchmakingOverview() {
+  try {
+    const data = await api.getMatchmakingOverview();
+    renderMatchmakingOverview(data);
+  } catch (error) {
+    setActionMessage(`均衡概览刷新失败：${error.message}`);
     showError(error.message);
   }
 }
@@ -98,30 +200,6 @@ async function publishMatch() {
     showError(error.message);
   } finally {
     disable(els.btnPublish, false);
-  }
-}
-
-async function randomPublishMatches() {
-  const maxMatchesText = els.maxMatches.value.trim();
-  const maxMatches = maxMatchesText ? Number(maxMatchesText) : undefined;
-  if (maxMatchesText && (!Number.isFinite(maxMatches) || maxMatches <= 0)) {
-    setActionMessage("场次数必须为大于0的数字");
-    return showError("场次数必须为大于0的数字");
-  }
-
-  try {
-    disable(els.btnRandomPublish, true);
-    setActionMessage("正在随机分组并发布...");
-    const data = await api.randomPublishMatches(maxMatches);
-    setActionMessage(
-      `已随机发布 ${data.createdMatchIds.length} 场；消耗 ${data.consumedPlayers} 人；匹配池剩余 ${data.remainingQueuePlayers} 人`
-    );
-    await refreshDashboard();
-  } catch (error) {
-    setActionMessage(`随机分组失败：${error.message}`);
-    showError(error.message);
-  } finally {
-    disable(els.btnRandomPublish, false);
   }
 }
 
@@ -150,6 +228,26 @@ async function importPlayersFromExcel() {
     showError(error.message);
   } finally {
     disable(els.btnImportPlayers, false);
+  }
+}
+
+async function setAllPlayersStatus(status) {
+  const targetText = status === "idle" ? "空闲" : "匹配中";
+  const ok = window.confirm(`确认将可操作选手批量设置为${targetText}吗？`);
+  if (!ok) return;
+  const triggerBtn = status === "idle" ? els.btnSetAllIdle : els.btnSetAllQueueing;
+  try {
+    disable(triggerBtn, true);
+    const data = await api.setAllPlayersStatus(status);
+    setActionMessage(
+      `批量设置完成：目标=${targetText}，更新 ${data.updatedCount} 人，跳过 ${data.skippedCount} 人（锁定/比赛中）`
+    );
+    await refreshDashboard();
+  } catch (error) {
+    setActionMessage(`批量设置失败：${error.message}`);
+    showError(error.message);
+  } finally {
+    disable(triggerBtn, false);
   }
 }
 
@@ -219,10 +317,11 @@ function showConsole() {
 }
 
 function startPolling() {
+  if (document.visibilityState !== "visible") return;
   stopPolling();
   pollTimer = setInterval(() => {
     refreshDashboard().catch(() => {});
-  }, 5000);
+  }, POLL_INTERVAL_VISIBLE_MS);
 }
 
 function stopPolling() {
@@ -230,6 +329,16 @@ function stopPolling() {
     clearInterval(pollTimer);
     pollTimer = null;
   }
+}
+
+function handleVisibilityChange() {
+  if (!hasSession("admin")) return;
+  if (document.visibilityState === "visible") {
+    refreshDashboard().catch(() => {});
+    startPolling();
+    return;
+  }
+  stopPolling();
 }
 
 function renderSummary(summary) {
@@ -252,6 +361,60 @@ function renderSummary(summary) {
     .join("");
 }
 
+function renderMatchmakingOverview(matchmaking) {
+  if (!matchmaking) {
+    els.matchmakingOverviewWrap.innerHTML = `<div class="notice">暂无均衡数据。</div>`;
+    return;
+  }
+  fillConfigInputs(matchmaking.config);
+  const allRows = matchmaking.players || [];
+  const summary = matchmaking.summary || {};
+  els.matchmakingOverviewWrap.innerHTML = `
+    <div class="notice" style="margin-top:8px;">
+      当前赛程：${escapeHtml(matchmaking.config?.cycleName || "-")}（ID: ${matchmaking.config?.cycleId || "-" }）；
+      选手数 ${allRows.length}；
+      缺口统计：最大 ${summary.maxGap ?? 0}，最小 ${summary.minGap ?? 0}，平均 ${summary.avgGap ?? 0}
+    </div>
+    <div class="table-scroll" style="margin-top:8px;">
+    <table>
+      <thead>
+        <tr>
+          <th>playerId</th>
+          <th>状态</th>
+          <th>assigned</th>
+          <th>finished</th>
+          <th>gap</th>
+          <th>胜/总</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${allRows
+          .map(
+            (p) => `
+          <tr>
+            <td>${escapeHtml(p.playerId)}</td>
+            <td>${escapeHtml(formatStatus(p.status))}</td>
+            <td>${p.assignedGames}</td>
+            <td>${p.finishedGames}</td>
+            <td>${p.gap}</td>
+            <td>${p.wins}/${p.totalGames}</td>
+          </tr>
+        `
+          )
+          .join("")}
+      </tbody>
+    </table>
+    </div>
+  `;
+}
+
+function fillConfigInputs(config) {
+  if (!config) return;
+  if (!els.cfgTargetGames.value) els.cfgTargetGames.value = String(config.targetGamesPerPlayer ?? 10);
+  if (!els.cfgWinrateTolerance.value) els.cfgWinrateTolerance.value = String(config.winrateTolerance ?? 0.1);
+  if (!els.cfgMaxTries.value) els.cfgMaxTries.value = String(config.maxShuffleTries ?? 60);
+}
+
 function renderQueue(queue) {
   if (!queue.length) {
     els.queueWrap.innerHTML = `<div class="notice">暂无匹配中的选手。</div>`;
@@ -259,6 +422,7 @@ function renderQueue(queue) {
   }
 
   els.queueWrap.innerHTML = `
+    <div class="table-scroll">
     <table>
       <thead>
         <tr>
@@ -281,6 +445,7 @@ function renderQueue(queue) {
           .join("")}
       </tbody>
     </table>
+    </div>
   `;
 }
 
@@ -290,7 +455,34 @@ function renderMatches(matches) {
     return;
   }
 
+  const keyword = listViewState.matchKeyword.trim().toLowerCase();
+  const filtered = !keyword
+    ? matches
+    : matches.filter((m) => {
+      const text = [
+        String(m.id || ""),
+        String(m.status || ""),
+        String(m.winner_team || ""),
+        ...(m.teamAPlayers || []),
+        ...(m.teamBPlayers || []),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return text.includes(keyword);
+    });
+  const totalPages = Math.max(1, Math.ceil(filtered.length / listViewState.matchesPageSize));
+  if (listViewState.matchesPage > totalPages) listViewState.matchesPage = totalPages;
+  const start = (listViewState.matchesPage - 1) * listViewState.matchesPageSize;
+  const paged = filtered.slice(start, start + listViewState.matchesPageSize);
+
   els.matchWrap.innerHTML = `
+    <div class="row" style="margin-bottom:8px;justify-content:space-between;">
+      <input id="match-filter-input" style="min-width:260px;" placeholder="筛选：场次ID/状态/选手ID" value="${escapeHtml(
+        listViewState.matchKeyword
+      )}">
+      <div class="notice">共 ${filtered.length} 条，当前第 ${listViewState.matchesPage}/${totalPages} 页</div>
+    </div>
+    <div class="table-scroll">
     <table>
       <thead>
         <tr>
@@ -305,7 +497,7 @@ function renderMatches(matches) {
         </tr>
       </thead>
       <tbody>
-        ${matches
+        ${paged
           .map((m) => {
             const startBtn =
               m.status === "locked"
@@ -341,6 +533,11 @@ function renderMatches(matches) {
           .join("")}
       </tbody>
     </table>
+    </div>
+    <div class="row" style="margin-top:8px;justify-content:flex-end;">
+      <button class="secondary" id="match-page-prev" ${listViewState.matchesPage <= 1 ? "disabled" : ""}>上一页</button>
+      <button class="secondary" id="match-page-next" ${listViewState.matchesPage >= totalPages ? "disabled" : ""}>下一页</button>
+    </div>
   `;
 
   els.matchWrap.querySelectorAll("button[data-action]").forEach((btn) => {
@@ -354,10 +551,53 @@ function renderMatches(matches) {
       if (action === "correctB") await correctWinner(matchId, "B");
     });
   });
+  const matchFilterInput = document.getElementById("match-filter-input");
+  if (matchFilterInput) {
+    matchFilterInput.addEventListener("input", () => {
+      listViewState.matchKeyword = matchFilterInput.value || "";
+      listViewState.matchesPage = 1;
+      renderMatches((latestDashboardData && latestDashboardData.matches) || []);
+    });
+  }
+  const prevBtn = document.getElementById("match-page-prev");
+  const nextBtn = document.getElementById("match-page-next");
+  if (prevBtn) {
+    prevBtn.addEventListener("click", () => {
+      if (listViewState.matchesPage <= 1) return;
+      listViewState.matchesPage -= 1;
+      renderMatches((latestDashboardData && latestDashboardData.matches) || []);
+    });
+  }
+  if (nextBtn) {
+    nextBtn.addEventListener("click", () => {
+      if (listViewState.matchesPage >= totalPages) return;
+      listViewState.matchesPage += 1;
+      renderMatches((latestDashboardData && latestDashboardData.matches) || []);
+    });
+  }
 }
 
 function renderPlayers(players) {
+  const keyword = listViewState.playerKeyword.trim().toLowerCase();
+  const filtered = !keyword
+    ? players
+    : players.filter((p) => {
+      const text = [p.playerId, p.displayName, p.status].join(" ").toLowerCase();
+      return text.includes(keyword);
+    });
+  const totalPages = Math.max(1, Math.ceil(filtered.length / listViewState.playersPageSize));
+  if (listViewState.playersPage > totalPages) listViewState.playersPage = totalPages;
+  const start = (listViewState.playersPage - 1) * listViewState.playersPageSize;
+  const paged = filtered.slice(start, start + listViewState.playersPageSize);
+
   els.playerWrap.innerHTML = `
+    <div class="row" style="margin-bottom:8px;justify-content:space-between;">
+      <input id="player-filter-input" style="min-width:260px;" placeholder="筛选：playerId/显示名/状态" value="${escapeHtml(
+        listViewState.playerKeyword
+      )}">
+      <div class="notice">共 ${filtered.length} 人，当前第 ${listViewState.playersPage}/${totalPages} 页</div>
+    </div>
+    <div class="table-scroll">
     <table>
       <thead>
         <tr>
@@ -373,7 +613,7 @@ function renderPlayers(players) {
         </tr>
       </thead>
       <tbody>
-        ${players
+        ${paged
           .map(
             (p) => `
           <tr>
@@ -403,6 +643,11 @@ function renderPlayers(players) {
           .join("")}
       </tbody>
     </table>
+    </div>
+    <div class="row" style="margin-top:8px;justify-content:flex-end;">
+      <button class="secondary" id="player-page-prev" ${listViewState.playersPage <= 1 ? "disabled" : ""}>上一页</button>
+      <button class="secondary" id="player-page-next" ${listViewState.playersPage >= totalPages ? "disabled" : ""}>下一页</button>
+    </div>
   `;
 
   els.playerWrap.querySelectorAll("button[data-action][data-player-id]").forEach((btn) => {
@@ -428,6 +673,30 @@ function renderPlayers(players) {
       }
     });
   });
+  const playerFilterInput = document.getElementById("player-filter-input");
+  if (playerFilterInput) {
+    playerFilterInput.addEventListener("input", () => {
+      listViewState.playerKeyword = playerFilterInput.value || "";
+      listViewState.playersPage = 1;
+      renderPlayers((latestDashboardData && latestDashboardData.players) || []);
+    });
+  }
+  const prevBtn = document.getElementById("player-page-prev");
+  const nextBtn = document.getElementById("player-page-next");
+  if (prevBtn) {
+    prevBtn.addEventListener("click", () => {
+      if (listViewState.playersPage <= 1) return;
+      listViewState.playersPage -= 1;
+      renderPlayers((latestDashboardData && latestDashboardData.players) || []);
+    });
+  }
+  if (nextBtn) {
+    nextBtn.addEventListener("click", () => {
+      if (listViewState.playersPage >= totalPages) return;
+      listViewState.playersPage += 1;
+      renderPlayers((latestDashboardData && latestDashboardData.players) || []);
+    });
+  }
 }
 
 function splitIds(text) {
@@ -445,9 +714,7 @@ function parsePlayerImportRows(rawText) {
 
   const rows = [];
   for (const line of lines) {
-    const cols = line.includes("\t")
-      ? line.split("\t")
-      : line.split(/[,\uff0c]/);
+    const cols = splitImportColumns(line);
     const values = cols.map((x) => x.trim());
     if (!values.length) continue;
 
@@ -466,10 +733,34 @@ function parsePlayerImportRows(rawText) {
   return rows;
 }
 
+function splitImportColumns(line) {
+  if (line.includes("\t")) return line.split("\t");
+  if (line.includes(",") || line.includes("，")) return line.split(/[,\uff0c]/);
+  // 兼容用户直接输入 playerId/displayName/wins/totalGames/status
+  if (line.includes("/")) return line.split("/");
+  return [line];
+}
+
 function toNonNegativeInt(value, fallback) {
   const n = Number(value);
   if (!Number.isFinite(n) || n < 0) return fallback;
   return Math.floor(n);
+}
+
+function toPositiveNumberOrUndefined(value) {
+  const text = String(value || "").trim();
+  if (!text) return undefined;
+  const n = Number(text);
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  return Math.floor(n);
+}
+
+function toNumberOrUndefined(value) {
+  const text = String(value || "").trim();
+  if (!text) return undefined;
+  const n = Number(text);
+  if (!Number.isFinite(n)) return undefined;
+  return n;
 }
 
 function normalizeStatus(value) {
