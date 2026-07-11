@@ -81,11 +81,11 @@ export const api = {
       body: JSON.stringify(payload || {}),
     });
   },
-  generateMatchmakingMatches(maxMatches) {
+  generateMatchmakingMatches(maxMatches, matchesPerPlayer) {
     return request("/api/admin/matchmaking/generate", {
       method: "POST",
       role: "admin",
-      body: JSON.stringify({ maxMatches }),
+      body: JSON.stringify({ maxMatches, matchesPerPlayer }),
     });
   },
   getMatchmakingOverview() {

@@ -428,7 +428,10 @@ async function handleRequest(request, env) {
     const payload = await readJsonBody(request);
     const maxMatchesRaw = Number(payload.maxMatches || payload.batchMatchesPerRun || 9999);
     const maxMatches = Number.isFinite(maxMatchesRaw) && maxMatchesRaw > 0 ? Math.floor(maxMatchesRaw) : 9999;
-    const generated = await generateMatchesByGap(env, session.playerId, { maxMatches });
+    const matchesPerPlayerRaw = Number(payload.matchesPerPlayer || 1);
+    const matchesPerPlayer =
+      Number.isFinite(matchesPerPlayerRaw) && matchesPerPlayerRaw > 0 ? Math.floor(matchesPerPlayerRaw) : 1;
+    const generated = await generateMatchesByGap(env, session.playerId, { maxMatches, matchesPerPlayer });
     return json({ ok: true, data: generated });
   }
 
@@ -439,12 +442,34 @@ async function handleRequest(request, env) {
     const match = await getMatchById(env, matchId);
     if (!match) return notFound("对局不存在");
     if (match.status !== "locked") return badRequest(`当前对局状态 ${match.status} 不能开局`);
+    const participants = await env.DB.prepare("SELECT player_id FROM match_players WHERE match_id=?").bind(matchId).all();
+    const participantDbIds = (participants.results || []).map((x) => Number(x.player_id));
+    if (participantDbIds.length !== 10) return badRequest("对局参与人数不是10，无法开局");
+    const idPlaceholders = participantDbIds.map(() => "?").join(",");
+    const playerStatusRows = await env.DB.prepare(
+      `SELECT id, status, current_match_id FROM players WHERE id IN (${idPlaceholders})`
+    )
+      .bind(...participantDbIds)
+      .all();
+    for (const row of playerStatusRows.results || []) {
+      if (row.status === "in_game") {
+        return badRequest("存在选手正在其他对局中，无法开局");
+      }
+      if (row.status === "locked" && row.current_match_id && Number(row.current_match_id) !== matchId) {
+        return badRequest("存在选手被其他对局锁定，无法开局");
+      }
+    }
 
     const now = nowIso();
     await env.DB.batch([
       env.DB.prepare("UPDATE matches SET status='in_game', started_at=? WHERE id=?").bind(now, matchId),
-      env.DB.prepare("UPDATE players SET status='in_game', updated_at=? WHERE current_match_id=?").bind(now, matchId),
+      env.DB.prepare(
+        `UPDATE players SET status='in_game', current_match_id=?, updated_at=?, last_seen_at=? WHERE id IN (${idPlaceholders})`
+      ).bind(matchId, now, now, ...participantDbIds),
       env.DB.prepare("UPDATE queue_entries SET state='matched' WHERE match_id=? AND state='locked'").bind(matchId),
+      env.DB.prepare(
+        `UPDATE queue_entries SET state='matched', match_id=? WHERE state='queueing' AND player_id IN (${idPlaceholders})`
+      ).bind(matchId, ...participantDbIds),
     ]);
     return json({ ok: true, data: { matchId, status: "in_game" } });
   }
@@ -876,6 +901,7 @@ async function resetMatchmakingCycle(env, options = {}) {
 async function generateMatchesByGap(env, createdBy, options = {}) {
   const config = await getMatchmakingConfig(env);
   const maxMatches = clampInt(options.maxMatches, 1, 9999, 9999);
+  const matchesPerPlayer = clampInt(options.matchesPerPlayer, 1, 10, 1);
   const queueRes = await env.DB.prepare(
     `SELECT p.id, p.player_id, p.display_name, p.wins, p.total_games, p.status, pcs.assigned_games
      FROM players p
@@ -889,36 +915,62 @@ async function generateMatchesByGap(env, createdBy, options = {}) {
   for (const row of queueRes.results || []) {
     if (!unique.has(row.id)) unique.set(row.id, row);
   }
-  let pool = [...unique.values()];
+  const basePool = [...unique.values()];
   const createdMatchIds = [];
   const matchDeltas = [];
+  const virtualAssigned = new Map(basePool.map((p) => [p.id, Number(p.assigned_games || 0)]));
+  let activeMatches = 0;
+  let plannedMatches = 0;
 
-  while (pool.length >= 10 && createdMatchIds.length < maxMatches) {
-    const selected = selectPlayersByGap(pool, config.targetGamesPerPlayer, 10);
-    const selectedIds = new Set(selected.map((p) => p.id));
-    const split = splitTeamsWithWinrateTuning(selected, {
-      tolerancePercent: config.winrateTolerance * 100,
-      maxShuffleTries: config.maxShuffleTries,
-      fallbackWinRatePercent: computeGlobalAverageWinratePercent(pool),
-    });
-    const teamA = split.teamA;
-    const teamB = split.teamB;
-    const players = await getPlayersByPlayerIds(env, [...teamA, ...teamB]);
-    if (players.length !== 10 || !players.every((p) => p.status === "queueing")) {
-      pool = pool.filter((p) => !selectedIds.has(p.id));
-      continue;
+  for (let round = 1; round <= matchesPerPlayer; round += 1) {
+    let roundPool = [...basePool];
+    while (roundPool.length >= 10 && createdMatchIds.length < maxMatches) {
+      const projected = roundPool.map((p) => ({
+        ...p,
+        assigned_games: Number(virtualAssigned.get(p.id) || 0),
+      }));
+      const selected = selectPlayersByGap(projected, config.targetGamesPerPlayer, 10);
+      const selectedIds = new Set(selected.map((p) => p.id));
+      const split = splitTeamsWithWinrateTuning(selected, {
+        tolerancePercent: config.winrateTolerance * 100,
+        maxShuffleTries: config.maxShuffleTries,
+        fallbackWinRatePercent: computeGlobalAverageWinratePercent(basePool),
+      });
+      const teamA = split.teamA;
+      const teamB = split.teamB;
+      const isRoundOne = round === 1;
+
+      if (isRoundOne) {
+        const players = await getPlayersByPlayerIds(env, [...teamA, ...teamB]);
+        if (players.length !== 10 || !players.every((p) => p.status === "queueing")) {
+          roundPool = roundPool.filter((p) => !selectedIds.has(p.id));
+          continue;
+        }
+      }
+
+      const matchId = await createLockedMatch(env, createdBy, teamA, teamB, selected, {
+        cycleId: config.cycleId,
+        lockPlayers: isRoundOne,
+      });
+      createdMatchIds.push(matchId);
+      matchDeltas.push(Number(split.delta.toFixed(2)));
+      if (isRoundOne) activeMatches += 1;
+      else plannedMatches += 1;
+      for (const row of selected) {
+        virtualAssigned.set(row.id, Number(virtualAssigned.get(row.id) || 0) + 1);
+      }
+      roundPool = roundPool.filter((p) => !selectedIds.has(p.id));
     }
-
-    const matchId = await createLockedMatch(env, createdBy, teamA, teamB, players, { cycleId: config.cycleId });
-    createdMatchIds.push(matchId);
-    matchDeltas.push(Number(split.delta.toFixed(2)));
-    pool = pool.filter((p) => !selectedIds.has(p.id));
   }
 
+  const queueAfter = await getQueuePlayers(env);
   return {
     createdMatchIds,
     consumedPlayers: createdMatchIds.length * 10,
-    remainingQueuePlayers: pool.length,
+    activeMatches,
+    plannedMatches,
+    remainingQueuePlayers: queueAfter.length,
+    matchesPerPlayer,
     averageWinrateDelta: matchDeltas.length
       ? Number((matchDeltas.reduce((acc, x) => acc + x, 0) / matchDeltas.length).toFixed(2))
       : 0,
@@ -1053,6 +1105,7 @@ async function getPlayersByPlayerIds(env, playerIds) {
 async function createLockedMatch(env, createdBy, teamAIds, teamBIds, players, options = {}) {
   const now = nowIso();
   const cycleId = Number(options.cycleId || 0);
+  const lockPlayers = options.lockPlayers !== false;
   const hasCycleColumn = await hasColumn(env, "matches", "cycle_id");
   const inserted = hasCycleColumn
     ? await env.DB.prepare(
@@ -1074,18 +1127,21 @@ async function createLockedMatch(env, createdBy, teamAIds, teamBIds, players, op
     statements.push(
       env.DB.prepare("INSERT INTO match_players (match_id, player_id, team) VALUES (?, ?, 'A')").bind(matchId, p.id)
     );
-    statements.push(
-      env.DB.prepare("UPDATE players SET status='locked', current_match_id=?, updated_at=? WHERE id=?").bind(
-        matchId,
-        now,
-        p.id
-      )
-    );
-    statements.push(
-      env.DB.prepare(
-        "UPDATE queue_entries SET state='locked', match_id=? WHERE id=(SELECT id FROM queue_entries WHERE player_id=? AND state='queueing' ORDER BY id DESC LIMIT 1)"
-      ).bind(matchId, p.id)
-    );
+    if (lockPlayers) {
+      statements.push(
+        env.DB.prepare("UPDATE players SET status='locked', current_match_id=?, updated_at=?, last_seen_at=? WHERE id=?").bind(
+          matchId,
+          now,
+          now,
+          p.id
+        )
+      );
+      statements.push(
+        env.DB.prepare(
+          "UPDATE queue_entries SET state='locked', match_id=? WHERE id=(SELECT id FROM queue_entries WHERE player_id=? AND state='queueing' ORDER BY id DESC LIMIT 1)"
+        ).bind(matchId, p.id)
+      );
+    }
     if (cycleId > 0) {
       statements.push(
         env.DB.prepare(
@@ -1100,18 +1156,21 @@ async function createLockedMatch(env, createdBy, teamAIds, teamBIds, players, op
     statements.push(
       env.DB.prepare("INSERT INTO match_players (match_id, player_id, team) VALUES (?, ?, 'B')").bind(matchId, p.id)
     );
-    statements.push(
-      env.DB.prepare("UPDATE players SET status='locked', current_match_id=?, updated_at=? WHERE id=?").bind(
-        matchId,
-        now,
-        p.id
-      )
-    );
-    statements.push(
-      env.DB.prepare(
-        "UPDATE queue_entries SET state='locked', match_id=? WHERE id=(SELECT id FROM queue_entries WHERE player_id=? AND state='queueing' ORDER BY id DESC LIMIT 1)"
-      ).bind(matchId, p.id)
-    );
+    if (lockPlayers) {
+      statements.push(
+        env.DB.prepare("UPDATE players SET status='locked', current_match_id=?, updated_at=?, last_seen_at=? WHERE id=?").bind(
+          matchId,
+          now,
+          now,
+          p.id
+        )
+      );
+      statements.push(
+        env.DB.prepare(
+          "UPDATE queue_entries SET state='locked', match_id=? WHERE id=(SELECT id FROM queue_entries WHERE player_id=? AND state='queueing' ORDER BY id DESC LIMIT 1)"
+        ).bind(matchId, p.id)
+      );
+    }
     if (cycleId > 0) {
       statements.push(
         env.DB.prepare(

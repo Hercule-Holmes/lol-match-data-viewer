@@ -23,6 +23,7 @@ const els = {
   cfgWinrateTolerance: document.getElementById("cfg-winrate-tolerance"),
   cfgMaxTries: document.getElementById("cfg-max-tries"),
   cfgGenerateMaxMatches: document.getElementById("cfg-generate-max-matches"),
+  cfgMatchesPerPlayer: document.getElementById("cfg-matches-per-player"),
   resetPlayerTotals: document.getElementById("reset-player-totals"),
   playersImportText: document.getElementById("players-import-text"),
   importReplaceExisting: document.getElementById("import-replace-existing"),
@@ -136,12 +137,13 @@ async function saveMatchmakingConfig() {
 
 async function generateMatchesByGap() {
   const maxMatches = toPositiveNumberOrUndefined(els.cfgGenerateMaxMatches.value);
+  const matchesPerPlayer = toPositiveNumberOrUndefined(els.cfgMatchesPerPlayer.value);
   try {
     disable(els.btnGenerateMatches, true);
     setActionMessage("正在按缺口优先批量生成对局...");
-    const data = await api.generateMatchmakingMatches(maxMatches);
+    const data = await api.generateMatchmakingMatches(maxMatches, matchesPerPlayer);
     setActionMessage(
-      `均衡模式已生成 ${data.createdMatchIds.length} 场；消耗 ${data.consumedPlayers} 人；剩余 ${data.remainingQueuePlayers} 人；平均胜率差 ${data.averageWinrateDelta}%`
+      `均衡模式已生成 ${data.createdMatchIds.length} 场（即时锁定 ${data.activeMatches} 场，预分配 ${data.plannedMatches} 场）；消耗 ${data.consumedPlayers} 人次；匹配池剩余 ${data.remainingQueuePlayers} 人；平均胜率差 ${data.averageWinrateDelta}%`
     );
     await refreshDashboard();
   } catch (error) {
@@ -495,7 +497,6 @@ function renderMatches(matches) {
       )}">
       <div class="notice">共 ${filtered.length} 条，当前第 ${listViewState.matchesPage}/${totalPages} 页</div>
     </div>
-    <div class="table-scroll">
     <table>
       <thead>
         <tr>
@@ -539,8 +540,8 @@ function renderMatches(matches) {
                 <td>#${m.id}</td>
                 <td>${escapeHtml(formatMatchStatus(m.status))}</td>
                 <td>${escapeHtml(formatWinnerTeam(m.winner_team))}</td>
-                <td>${escapeHtml((m.teamAPlayers || []).join(", ") || "-")}</td>
-                <td>${escapeHtml((m.teamBPlayers || []).join(", ") || "-")}</td>
+                <td>${renderMemberLines(m.teamAPlayers)}</td>
+                <td>${renderMemberLines(m.teamBPlayers)}</td>
                 <td>${fmtDateTime(m.created_at)}</td>
                 <td>${fmtDateTime(m.started_at)}</td>
                 <td>${startBtn} ${finishBtns} ${voidBtn} ${correctBtns}</td>
@@ -550,7 +551,6 @@ function renderMatches(matches) {
           .join("")}
       </tbody>
     </table>
-    </div>
     <div class="row" style="margin-top:8px;justify-content:flex-end;">
       <button class="secondary" id="match-page-prev" ${listViewState.matchesPage <= 1 ? "disabled" : ""}>上一页</button>
       <button class="secondary" id="match-page-next" ${listViewState.matchesPage >= totalPages ? "disabled" : ""}>下一页</button>
@@ -593,6 +593,12 @@ function renderMatches(matches) {
       renderMatches((latestDashboardData && latestDashboardData.matches) || []);
     });
   }
+}
+
+function renderMemberLines(members) {
+  const list = Array.isArray(members) ? members : [];
+  if (!list.length) return "-";
+  return list.map((id) => escapeHtml(id)).join("<br>");
 }
 
 function renderPlayers(players) {
