@@ -529,7 +529,7 @@ function renderMatches(matches) {
                 ? `<button class="warn" data-action="void" data-id="${m.id}">流局</button>`
                 : `<button disabled>流局</button>`;
             const correctBtns =
-              m.status === "finished"
+              (m.status === "finished"||m.status === "cancelled")
                 ? `
                   <button class="warn" data-action="correctA" data-id="${m.id}">改判A胜</button>
                   <button class="warn" data-action="correctB" data-id="${m.id}">改判B胜</button>
