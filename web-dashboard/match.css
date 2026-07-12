@@ -197,3 +197,17 @@ th {
 .hidden {
   display: none !important;
 }
+
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s;
+}
+
+th.sortable:hover {
+  color: var(--text);
+}
+
+th.sortable.sorted {
+  color: var(--accent);
+}

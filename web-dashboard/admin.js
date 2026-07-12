@@ -33,6 +33,8 @@ const els = {
   queueWrap: document.getElementById("queue-wrap"),
   matchWrap: document.getElementById("match-wrap"),
   playerWrap: document.getElementById("player-wrap"),
+  funStatsWrap: document.getElementById("fun-stats-wrap"),
+  coverageWrap: document.getElementById("coverage-wrap"),
 };
 
 let pollTimer = null;
@@ -45,6 +47,8 @@ const listViewState = {
   playersPage: 1,
   matchesPageSize: 12,
   playersPageSize: 20,
+  playerSortBy: null,   // 'wins' | 'totalGames' | 'winRate'
+  playerSortDir: "desc", // 'asc' | 'desc'
 };
 
 bindEvents();
@@ -103,6 +107,8 @@ async function refreshDashboard() {
     renderMatches(data.matches);
     renderPlayers(data.players);
     renderMatchmakingOverview(data.matchmaking);
+    renderFunStats(data.matches, data.players);
+    renderCoverage(data.matches, data.players);
   } catch (error) {
     if (error.status === 401 || error.status === 403) {
       await logout(false);
@@ -603,23 +609,46 @@ function renderMemberLines(members) {
 
 function renderPlayers(players) {
   const keyword = listViewState.playerKeyword.trim().toLowerCase();
-  const filtered = !keyword
-    ? players
+  let filtered = !keyword
+    ? [...players]
     : players.filter((p) => {
       const text = [p.playerId, p.displayName, p.status].join(" ").toLowerCase();
       return text.includes(keyword);
     });
+
+  // Sort
+  const sortBy = listViewState.playerSortBy;
+  const sortDir = listViewState.playerSortDir;
+  if (sortBy) {
+    filtered.sort((a, b) => {
+      const va = sortBy === "winRate" ? Number(a.winRate) : (a[sortBy] || 0);
+      const vb = sortBy === "winRate" ? Number(b.winRate) : (b[sortBy] || 0);
+      return sortDir === "desc" ? vb - va : va - vb;
+    });
+  }
+
   const totalPages = Math.max(1, Math.ceil(filtered.length / listViewState.playersPageSize));
   if (listViewState.playersPage > totalPages) listViewState.playersPage = totalPages;
   const start = (listViewState.playersPage - 1) * listViewState.playersPageSize;
   const paged = filtered.slice(start, start + listViewState.playersPageSize);
+
+  function sortArrow(field) {
+    if (listViewState.playerSortBy !== field) return "";
+    return listViewState.playerSortDir === "desc" ? " ▼" : " ▲";
+  }
+
+  function sortHeader(field, label) {
+    const arrow = sortArrow(field);
+    const active = listViewState.playerSortBy === field;
+    return `<th class="sortable${active ? " sorted" : ""}" data-sort="${field}">${label}${arrow}</th>`;
+  }
 
   els.playerWrap.innerHTML = `
     <div class="row" style="margin-bottom:8px;justify-content:space-between;">
       <input id="player-filter-input" style="min-width:260px;" placeholder="筛选：playerId/显示名/状态" value="${escapeHtml(
         listViewState.playerKeyword
       )}">
-      <div class="notice">共 ${filtered.length} 人，当前第 ${listViewState.playersPage}/${totalPages} 页</div>
+      <div class="notice">共 ${filtered.length} 人，当前第 ${listViewState.playersPage}/${totalPages} 页${sortBy ? `，按${sortBy === 'wins' ? '胜场' : sortBy === 'totalGames' ? '总场次' : '胜率'}${sortDir === 'desc' ? '降序' : '升序'}` : ''}</div>
     </div>
     <div class="table-scroll">
     <table>
@@ -628,9 +657,9 @@ function renderPlayers(players) {
           <th>playerId</th>
           <th>显示名</th>
           <th>状态</th>
-          <th>胜场</th>
-          <th>总场次</th>
-          <th>胜率</th>
+          ${sortHeader("wins", "胜场")}
+          ${sortHeader("totalGames", "总场次")}
+          ${sortHeader("winRate", "胜率")}
           <th>当前场次</th>
           <th>状态控制</th>
           <th>操作</th>
@@ -705,6 +734,20 @@ function renderPlayers(players) {
       renderPlayers((latestDashboardData && latestDashboardData.players) || []);
     });
   }
+  // Sortable header clicks
+  els.playerWrap.querySelectorAll("th.sortable").forEach((th) => {
+    th.addEventListener("click", () => {
+      const field = th.dataset.sort;
+      if (listViewState.playerSortBy === field) {
+        listViewState.playerSortDir = listViewState.playerSortDir === "desc" ? "asc" : "desc";
+      } else {
+        listViewState.playerSortBy = field;
+        listViewState.playerSortDir = "desc";
+      }
+      listViewState.playersPage = 1;
+      renderPlayers((latestDashboardData && latestDashboardData.players) || []);
+    });
+  });
   const prevBtn = document.getElementById("player-page-prev");
   const nextBtn = document.getElementById("player-page-next");
   if (prevBtn) {
@@ -721,6 +764,338 @@ function renderPlayers(players) {
       renderPlayers((latestDashboardData && latestDashboardData.players) || []);
     });
   }
+}
+
+function computeFunStats(matches, players) {
+  const MIN_GAMES = 3;
+  const MIN_TOGETHER = 2; // minimum games with/against the reference player
+
+  // Only finished matches with a clear winner
+  const finished = matches.filter(
+    (m) => m.status === "finished" && (m.winner_team === "A" || m.winner_team === "B")
+  );
+
+  // Qualified players: at least MIN_GAMES totalGames
+  const qualified = players.filter((p) => p.totalGames >= MIN_GAMES);
+  if (qualified.length < 2) return null;
+
+  // Sort by winRate
+  const byWRDesc = [...qualified].sort((a, b) => b.winRate - a.winRate);
+  const highestWR = byWRDesc[0];
+  const lowestWR = byWRDesc[byWRDesc.length - 1];
+
+  // If highest and lowest are the same player, we can't compute
+  if (highestWR.playerId === lowestWR.playerId) return null;
+
+  // Counters
+  const teammateWithHighest = {}; // playerId -> count (躺赢狗: teammate count with highest-WR)
+  const withLowestWins = {};      // playerId -> wins when teamed with lowest-WR
+  const withLowestTotal = {};     // playerId -> total games when teamed with lowest-WR
+  const vsLowestWins = {};        // playerId -> wins when opposing lowest-WR
+  const vsLowestTotal = {};       // playerId -> total games when opposing lowest-WR
+
+  for (const m of finished) {
+    const teamA = m.teamAPlayers || [];
+    const teamB = m.teamBPlayers || [];
+
+    const highestOnA = teamA.includes(highestWR.playerId);
+    const highestOnB = teamB.includes(highestWR.playerId);
+    const lowestOnA = teamA.includes(lowestWR.playerId);
+    const lowestOnB = teamB.includes(lowestWR.playerId);
+    const winnerIsA = m.winner_team === "A";
+
+    // 躺赢狗: teammates of highest-WR player (ranked by count)
+    if (highestOnA) {
+      for (const pid of teamA) {
+        if (pid !== highestWR.playerId) {
+          teammateWithHighest[pid] = (teammateWithHighest[pid] || 0) + 1;
+        }
+      }
+    }
+    if (highestOnB) {
+      for (const pid of teamB) {
+        if (pid !== highestWR.playerId) {
+          teammateWithHighest[pid] = (teammateWithHighest[pid] || 0) + 1;
+        }
+      }
+    }
+
+    // 带不动 / 越南腐乳: wins & totals with/against lowest-WR player
+    if (lowestOnA) {
+      // Teammates of lowest (team A except lowest)
+      for (const pid of teamA) {
+        if (pid !== lowestWR.playerId) {
+          withLowestTotal[pid] = (withLowestTotal[pid] || 0) + 1;
+          if (winnerIsA) withLowestWins[pid] = (withLowestWins[pid] || 0) + 1;
+        }
+      }
+      // Opponents of lowest (team B)
+      for (const pid of teamB) {
+        vsLowestTotal[pid] = (vsLowestTotal[pid] || 0) + 1;
+        if (!winnerIsA) vsLowestWins[pid] = (vsLowestWins[pid] || 0) + 1;
+      }
+    }
+    if (lowestOnB) {
+      // Teammates of lowest (team B except lowest)
+      for (const pid of teamB) {
+        if (pid !== lowestWR.playerId) {
+          withLowestTotal[pid] = (withLowestTotal[pid] || 0) + 1;
+          if (!winnerIsA) withLowestWins[pid] = (withLowestWins[pid] || 0) + 1;
+        }
+      }
+      // Opponents of lowest (team A)
+      for (const pid of teamA) {
+        vsLowestTotal[pid] = (vsLowestTotal[pid] || 0) + 1;
+        if (winnerIsA) vsLowestWins[pid] = (vsLowestWins[pid] || 0) + 1;
+      }
+    }
+  }
+
+  // 躺赢狗: pick by max teammate count (ties included)
+  function pickTopByCount(countMap, excludeId) {
+    const entries = Object.entries(countMap)
+      .filter(([pid]) => pid !== excludeId)
+      .sort((a, b) => b[1] - a[1]);
+    if (entries.length === 0) return null;
+    const topCount = entries[0][1];
+    if (topCount === 0) return null;
+    return entries.filter(([, c]) => c === topCount);
+  }
+
+  // 带不动 / 越南腐乳: pick by winRate in the relevant match subset
+  function pickTopBySubsetWR(winsMap, totalMap, excludeId, order, minTogether) {
+    // order: 'desc' = highest WR in subset first (带不动)
+    //        'asc'  = lowest  WR in subset first (越南腐乳)
+    const entries = [];
+    for (const [pid] of Object.entries(totalMap)) {
+      if (pid === excludeId) continue;
+      const total = totalMap[pid] || 0;
+      if (total < minTogether) continue;
+      const wins = winsMap[pid] || 0;
+      const wr = wins / total;
+      entries.push([pid, total, wins, wr]);
+    }
+    if (entries.length === 0) return null;
+    entries.sort((a, b) => (order === "desc" ? b[3] - a[3] : a[3] - b[3]));
+    const topWR = entries[0][3];
+    return entries.filter(([, , , wr]) => wr === topWR);
+  }
+
+  const carriedDog = pickTopByCount(teammateWithHighest, highestWR.playerId);
+  const cantCarry = pickTopBySubsetWR(withLowestWins, withLowestTotal, lowestWR.playerId, "desc", MIN_TOGETHER);
+  const vietnamFuru = pickTopBySubsetWR(vsLowestWins, vsLowestTotal, lowestWR.playerId, "asc", MIN_TOGETHER);
+
+  return {
+    highestWR: {
+      playerId: highestWR.playerId,
+      displayName: highestWR.displayName,
+      winRate: highestWR.winRate,
+      totalGames: highestWR.totalGames,
+    },
+    lowestWR: {
+      playerId: lowestWR.playerId,
+      displayName: lowestWR.displayName,
+      winRate: lowestWR.winRate,
+      totalGames: lowestWR.totalGames,
+    },
+    carriedDog,
+    cantCarry,
+    vietnamFuru,
+  };
+}
+
+function renderFunStats(matches, players) {
+  const stats = computeFunStats(matches, players);
+
+  if (!stats) {
+    els.funStatsWrap.innerHTML =
+      '<div class="notice">数据不足，需要至少2名完成3场以上的选手。</div>';
+    return;
+  }
+
+  function resolvePlayer(pid) {
+    const p = (players || []).find((x) => x.playerId === pid);
+    return p
+      ? { name: p.displayName || p.playerId }
+      : { name: pid };
+  }
+
+  function renderCard(title, emoji, pointLabel, refPlayer, entries, formatEntry) {
+    const refName = refPlayer.displayName || refPlayer.playerId;
+    const refWR = Number(refPlayer.winRate).toFixed(2);
+    const refGames = refPlayer.totalGames;
+
+    if (!entries) {
+      return `
+        <div class="kpi">
+          <div class="label">${emoji} ${title} <span style="font-size:10px;color:var(--warn);">(${pointLabel})</span></div>
+          <div style="margin-top:8px;font-size:13px;color:var(--dim);">
+            基准：<strong>${escapeHtml(refName)}</strong>（胜率 ${refWR}%，${refGames}场）
+          </div>
+          <div class="notice">暂无数据</div>
+        </div>
+      `;
+    }
+
+    const names = entries
+      .map((entry) => {
+        const info = resolvePlayer(entry[0]);
+        return `<strong>${escapeHtml(info.name)}</strong>${formatEntry(entry)}`;
+      })
+      .join("、");
+
+    return `
+      <div class="kpi">
+        <div class="label">${emoji} ${title} <span style="font-size:10px;color:var(--warn);">(${pointLabel})</span></div>
+        <div style="margin-top:8px;font-size:13px;color:var(--dim);">
+          基准：<strong>${escapeHtml(refName)}</strong>（胜率 ${refWR}%，${refGames}场）
+        </div>
+        <div style="margin-top:6px;font-size:14px;color:var(--text);">
+          ${names}
+        </div>
+      </div>
+    `;
+  }
+
+  els.funStatsWrap.innerHTML = `
+    <div class="grid" style="grid-template-columns: repeat(3, 1fr);">
+      ${renderCard("躺赢狗", "🐶", "1分", stats.highestWR, stats.carriedDog,
+        ([, count]) => `（同队${count}次）`
+      )}
+      ${renderCard("带不动", "😮‍💨", "2分", stats.lowestWR, stats.cantCarry,
+        ([, total, wins, wr]) => `（同队时${wins}胜/${total}场，胜率${(wr * 100).toFixed(1)}%）`
+      )}
+      ${renderCard("越南腐乳", "💀", "2分", stats.lowestWR, stats.vietnamFuru,
+        ([, total, wins, wr]) => `（对阵时${wins}胜/${total}场，胜率${(wr * 100).toFixed(1)}%）`
+      )}
+    </div>
+  `;
+}
+
+function computeCoverage(matches, players) {
+  // Only finished matches
+  const finished = matches.filter((m) => m.status === "finished");
+  if (finished.length === 0) return null;
+
+  const totalMatches = finished.length;
+
+  // Build per-player match sets: playerId -> Set<matchId>
+  const playerMatches = {};
+  for (const p of players) {
+    playerMatches[p.playerId] = new Set();
+  }
+  for (const m of finished) {
+    const allPids = [...(m.teamAPlayers || []), ...(m.teamBPlayers || [])];
+    for (const pid of allPids) {
+      if (playerMatches[pid]) {
+        playerMatches[pid].add(m.id);
+      }
+    }
+  }
+
+  // Greedy set cover: repeatedly pick the player covering the most uncovered matches
+  const uncovered = new Set(finished.map((m) => m.id));
+  const selected = []; // [{ playerId, displayName, totalGames, coveredNow, cumulative, pct }]
+  const remaining = players
+    .filter((p) => playerMatches[p.playerId] && playerMatches[p.playerId].size > 0)
+    .map((p) => ({ playerId: p.playerId, displayName: p.displayName, totalGames: p.totalGames }));
+
+  while (uncovered.size > 0 && remaining.length > 0) {
+    // Find the player whose set covers the most uncovered matches
+    let best = null;
+    let bestCovered = 0;
+    for (const p of remaining) {
+      const pSet = playerMatches[p.playerId];
+      let covered = 0;
+      for (const mid of pSet) {
+        if (uncovered.has(mid)) covered++;
+      }
+      if (covered > bestCovered) {
+        bestCovered = covered;
+        best = p;
+      }
+    }
+
+    if (!best || bestCovered === 0) break;
+
+    // Remove covered matches from uncovered set
+    const pSet = playerMatches[best.playerId];
+    for (const mid of pSet) {
+      uncovered.delete(mid);
+    }
+
+    const cumulative = totalMatches - uncovered.size;
+    selected.push({
+      playerId: best.playerId,
+      displayName: best.displayName || best.playerId,
+      totalGames: best.totalGames,
+      coveredNow: bestCovered,
+      cumulative,
+      pct: ((cumulative / totalMatches) * 100).toFixed(1),
+    });
+
+    // Remove selected player from remaining
+    const idx = remaining.findIndex((p) => p.playerId === best.playerId);
+    if (idx >= 0) remaining.splice(idx, 1);
+  }
+
+  return { totalMatches, selected, uncovered: uncovered.size };
+}
+
+function renderCoverage(matches, players) {
+  const result = computeCoverage(matches, players);
+
+  if (!result) {
+    els.coverageWrap.innerHTML = '<div class="notice">暂无已完成对局数据。</div>';
+    return;
+  }
+
+  const { totalMatches, selected, uncovered: left } = result;
+
+  if (selected.length === 0) {
+    els.coverageWrap.innerHTML = '<div class="notice">没有选手参与过任何对局。</div>';
+    return;
+  }
+
+  function barPct(pct) {
+    return `<span style="display:inline-block;width:120px;height:6px;border-radius:3px;background:rgba(255,255,255,.08);vertical-align:middle;margin:0 6px;"><span style="display:block;height:100%;border-radius:3px;background:var(--accent);width:${pct}%;"></span></span>`;
+  }
+
+  els.coverageWrap.innerHTML = `
+    <div class="table-scroll" style="margin-top:8px;max-height:420px;">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>选手</th>
+          <th>总场次</th>
+          <th>本轮新增</th>
+          <th>累计覆盖</th>
+          <th>覆盖率</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${selected
+          .map(
+            (p, i) => `
+          <tr>
+            <td>${i + 1}</td>
+            <td><strong>${escapeHtml(p.displayName)}</strong> <span style="font-size:11px;color:var(--dim);">${escapeHtml(p.playerId)}</span></td>
+            <td>${p.totalGames}</td>
+            <td style="color:var(--ok);">+${p.coveredNow}</td>
+            <td>${p.cumulative} / ${totalMatches}</td>
+            <td>${barPct(p.pct)} ${p.pct}%</td>
+          </tr>
+        `
+          )
+          .join("")}
+      </tbody>
+    </table>
+    </div>
+    <div class="notice" style="margin-top:8px;">
+      需 <strong style="color:var(--accent);">${selected.length}</strong> 名选手覆盖全部 <strong>${totalMatches}</strong> 场对局${left > 0 ? `（仍有 <strong style="color:var(--warn);">${left}</strong> 场未被任何选手覆盖）` : "（全覆盖 ✅）"}
+    </div>
+  `;
 }
 
 function splitIds(text) {
