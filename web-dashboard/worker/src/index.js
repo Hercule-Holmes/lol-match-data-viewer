@@ -559,7 +559,7 @@ async function handleRequest(request, env) {
     const now = nowIso();
     const statements = [
       env.DB.prepare("UPDATE matches SET status='cancelled', ended_at=?, winner_team=NULL WHERE id=?").bind(now, matchId),
-      env.DB.prepare("UPDATE players SET status='idle', current_match_id=NULL, updated_at=? WHERE current_match_id=?").bind(now, matchId),
+      env.DB.prepare("UPDATE players SET status='queueing', current_match_id=NULL, updated_at=? WHERE current_match_id=?").bind(now, matchId),
       env.DB.prepare("UPDATE queue_entries SET state='cancelled', cancelled_at=? WHERE match_id=? AND state IN ('locked', 'matched')").bind(now, matchId),
       env.DB.prepare("UPDATE match_players SET result=NULL WHERE match_id=?").bind(matchId),
     ];
