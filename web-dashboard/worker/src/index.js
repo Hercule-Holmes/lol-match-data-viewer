@@ -564,6 +564,11 @@ async function handleRequest(request, env) {
       env.DB.prepare("UPDATE match_players SET result=NULL WHERE match_id=?").bind(matchId),
     ];
 
+    // 为每位流局选手创建新的 queue_entries（状态=queueing）
+    for (const row of participants.results || []) {
+      statements.push(await insertQueueEntryStmt(env, row.db_player_id, now));
+    }
+
     const cycleId = Number(match.cycle_id || 0);
     if (cycleId > 0) {
       for (const row of participants.results || []) {

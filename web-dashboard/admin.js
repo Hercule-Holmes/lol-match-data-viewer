@@ -1007,6 +1007,10 @@ function computeCoverage(matches, players) {
   const finished = matches.filter((m) => m.status === "finished");
   if (finished.length === 0) return null;
 
+  // Exclude players whose accounts are temporarily unavailable
+  const excludedPlayerIds = new Set(["T1Keria#35383"]);
+  players = players.filter((p) => !excludedPlayerIds.has(p.playerId));
+
   const totalMatches = finished.length;
 
   // Build per-player match sets: playerId -> Set<matchId>
