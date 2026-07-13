@@ -985,7 +985,7 @@ async function getAdminDashboard(env) {
   ).all();
   const queue = await getQueuePlayers(env);
   const matchesRes = await env.DB.prepare(
-    "SELECT id, status, created_by, created_at, started_at, ended_at, winner_team FROM matches ORDER BY id DESC LIMIT 20"
+    "SELECT id, status, created_by, created_at, started_at, ended_at, winner_team FROM matches ORDER BY id DESC"
   ).all();
 
   const matches = matchesRes.results || [];

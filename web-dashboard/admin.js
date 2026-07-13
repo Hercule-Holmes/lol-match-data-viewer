@@ -42,6 +42,7 @@ let latestDashboardData = null;
 const POLL_INTERVAL_VISIBLE_MS = 10000;
 const listViewState = {
   matchKeyword: "",
+  selectedFinishedMatchId: "",
   playerKeyword: "",
   matchesPage: 1,
   playersPage: 1,
@@ -477,9 +478,17 @@ function renderMatches(matches) {
   }
 
   const keyword = listViewState.matchKeyword.trim().toLowerCase();
+  const finishedMatches = matches.filter((m) => m.status === "finished");
+  const validFinishedIdSet = new Set(finishedMatches.map((m) => String(m.id)));
+  if (listViewState.selectedFinishedMatchId && !validFinishedIdSet.has(listViewState.selectedFinishedMatchId)) {
+    listViewState.selectedFinishedMatchId = "";
+  }
+  const byFinished = listViewState.selectedFinishedMatchId
+    ? matches.filter((m) => String(m.id) === listViewState.selectedFinishedMatchId)
+    : matches;
   const filtered = !keyword
-    ? matches
-    : matches.filter((m) => {
+    ? byFinished
+    : byFinished.filter((m) => {
       const text = [
         String(m.id || ""),
         String(m.status || ""),
@@ -498,9 +507,22 @@ function renderMatches(matches) {
 
   els.matchWrap.innerHTML = `
     <div class="row" style="margin-bottom:8px;justify-content:space-between;">
-      <input id="match-filter-input" style="min-width:260px;" placeholder="筛选：场次ID/状态/选手ID" value="${escapeHtml(
-        listViewState.matchKeyword
-      )}">
+      <div class="row">
+        <input id="match-filter-input" style="min-width:260px;" placeholder="筛选：场次ID/状态/选手ID" value="${escapeHtml(
+          listViewState.matchKeyword
+        )}">
+        <select id="finished-match-select" style="min-width:260px;">
+          <option value="">全部场次</option>
+          ${finishedMatches
+            .map(
+              (m) =>
+                `<option value="${m.id}" ${String(m.id) === listViewState.selectedFinishedMatchId ? "selected" : ""}>已完成 #${m.id}（${formatWinnerTeam(
+                  m.winner_team
+                )}）</option>`
+            )
+            .join("")}
+        </select>
+      </div>
       <div class="notice">共 ${filtered.length} 条，当前第 ${listViewState.matchesPage}/${totalPages} 页</div>
     </div>
     <table>
@@ -579,6 +601,14 @@ function renderMatches(matches) {
   if (matchFilterInput) {
     matchFilterInput.addEventListener("input", () => {
       listViewState.matchKeyword = matchFilterInput.value || "";
+      listViewState.matchesPage = 1;
+      renderMatches((latestDashboardData && latestDashboardData.matches) || []);
+    });
+  }
+  const finishedMatchSelect = document.getElementById("finished-match-select");
+  if (finishedMatchSelect) {
+    finishedMatchSelect.addEventListener("change", () => {
+      listViewState.selectedFinishedMatchId = finishedMatchSelect.value || "";
       listViewState.matchesPage = 1;
       renderMatches((latestDashboardData && latestDashboardData.matches) || []);
     });
